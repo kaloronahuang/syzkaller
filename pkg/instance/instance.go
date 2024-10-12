@@ -464,10 +464,56 @@ func ExecprogCmd(execprog, executor, OS, arch, vmType string, opts csource.Optio
 			{Name: "type", Value: fmt.Sprint(vmType)},
 		})
 	}
+	/* feature parsing code */
+	enabledFeatures := ""
+	if opts.NetDevices {
+		enabledFeatures += "tun,"
+	}
+	if opts.NetReset {
+		enabledFeatures += "net_dev,"
+	}
+	if opts.Cgroups {
+		enabledFeatures += "cgroups,"
+	}
+	if opts.BinfmtMisc {
+		enabledFeatures += "binfmt_misc,"
+	}
+	if opts.CloseFDs {
+		enabledFeatures += "close_fds,"
+	}
+	if opts.DevlinkPCI {
+		enabledFeatures += "devlink_pci,"
+	}
+	if opts.NicVF {
+		enabledFeatures += "nic_vf,"
+	}
+	if opts.USB {
+		enabledFeatures += "usb,"
+	}
+	if opts.VhciInjection {
+		enabledFeatures += "vhci,"
+	}
+	if opts.Wifi {
+		enabledFeatures += "wifi,"
+	}
+	if opts.IEEE802154 {
+		enabledFeatures += "ieee802154,"
+	}
+	if opts.Sysctl {
+		enabledFeatures += "sysctl,"
+	}
+	if opts.Swap {
+		enabledFeatures += "swap,"
+	}
+	if enabledFeatures != "" {
+		// get rid of the comma;
+		enabledFeatures = enabledFeatures[:len(enabledFeatures)-1]
+		enabledFeatures = "-enable=" + enabledFeatures
+	}
 	return fmt.Sprintf("%v -executor=%v -arch=%v%v -sandbox=%v"+
-		" -procs=%v -repeat=%v -threaded=%v -collide=%v -cover=0%v %v",
+		" -procs=%v -repeat=%v -threaded=%v -collide=%v %v -cover=0%v %v",
 		execprog, executor, arch, osArg, opts.Sandbox,
-		opts.Procs, repeatCount, opts.Threaded, opts.Collide,
+		opts.Procs, repeatCount, opts.Threaded, opts.Collide, enabledFeatures,
 		optionalArg, progFile)
 }
 

@@ -33,6 +33,7 @@ var (
 	flagRestartTime = flag.Duration("restart_time", 0, "how long to run the test")
 	flagInfinite    = flag.Bool("infinite", true, "by default test is run for ever, -infinite=false to stop on crash")
 	flagStrace      = flag.Bool("strace", false, "run under strace (binary must be set in the config file")
+	flagCsourceOpt  = flag.String("csopt", "", "csource option file")
 )
 
 type FileType int
@@ -52,6 +53,15 @@ func main() {
 	cfg, err := mgrconfig.LoadFile(*flagConfig)
 	if err != nil {
 		log.Fatal(err)
+	}
+	opts := csource.DefaultOpts(cfg)
+	if *flagCsourceOpt != "" {
+		csoptBytes, err := os.ReadFile(*flagCsourceOpt)
+		if err != nil {
+			log.Fatal(err)
+		}
+		opts, err = csource.DeserializeOptions(csoptBytes)
+		opts.Repeat, opts.Threaded = true, true
 	}
 	if *flagRestartTime == 0 {
 		*flagRestartTime = cfg.Timeouts.VMRunningTime
@@ -95,7 +105,7 @@ func main() {
 	for i := 0; i < vmPool.Count(); i++ {
 		go func(index int) {
 			for {
-				runDone <- runInstance(cfg, reporter, vmPool, index, *flagRestartTime, runType)
+				runDone <- runInstance(cfg, reporter, vmPool, index, *flagRestartTime, runType, opts)
 				if atomic.LoadUint32(&shutdown) != 0 || !*flagInfinite {
 					// If this is the last worker then we can close the channel.
 					if atomic.AddUint32(&stoppedWorkers, 1) == uint32(vmPool.Count()) {
@@ -161,7 +171,7 @@ func storeCrash(cfg *mgrconfig.Config, res *instance.RunResult) {
 }
 
 func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
-	vmPool *vm.Pool, index int, timeout time.Duration, runType FileType) *instance.RunResult {
+	vmPool *vm.Pool, index int, timeout time.Duration, runType FileType, opts csource.Options) *instance.RunResult {
 	log.Printf("vm-%v: starting", index)
 	optArgs := &instance.OptionalConfig{}
 	if *flagStrace {
@@ -177,8 +187,6 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 	file := flag.Args()[0]
 	var res *instance.RunResult
 	if runType == LogFile {
-		opts := csource.DefaultOpts(cfg)
-		opts.Repeat, opts.Threaded = true, true
 		res, err = inst.RunSyzProgFile(file, timeout, opts, instance.SyzExitConditions)
 	} else {
 		var src []byte
