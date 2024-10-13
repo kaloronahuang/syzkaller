@@ -466,11 +466,14 @@ func ExecprogCmd(execprog, executor, OS, arch, vmType string, opts csource.Optio
 	}
 	/* feature parsing code */
 	enabledFeatures := ""
-	if opts.NetDevices {
+	if opts.NetInjection {
 		enabledFeatures += "tun,"
 	}
-	if opts.NetReset {
+	if opts.NetDevices {
 		enabledFeatures += "net_dev,"
+	}
+	if opts.NetReset {
+		enabledFeatures += "net_reset,"
 	}
 	if opts.Cgroups {
 		enabledFeatures += "cgroups,"
