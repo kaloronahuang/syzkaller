@@ -257,6 +257,10 @@ func (inst *instance) Copy(hostSrc string) (string, error) {
 	if err := runCmd(inst.debug, "scp", args...); err != nil {
 		return "", err
 	}
+	args = append(vmimpl.SSHArgs(true, inst.sshKey, 22, false), inst.sshUser+"@"+inst.ip, "sync")
+	if err := runCmd(inst.debug, "ssh", args...); err != nil {
+		return "", err
+	}
 	return vmDst, nil
 }
 

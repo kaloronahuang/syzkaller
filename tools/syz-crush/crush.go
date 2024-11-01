@@ -33,7 +33,7 @@ var (
 	flagRestartTime = flag.Duration("restart_time", 0, "how long to run the test")
 	flagInfinite    = flag.Bool("infinite", true, "by default test is run for ever, -infinite=false to stop on crash")
 	flagStrace      = flag.Bool("strace", false, "run under strace (binary must be set in the config file")
-	flagkGymCfg     = flag.String("kgym_cfg", "", "kGym configuration file")
+	flagkGymCfg     = flag.Bool("kgym_config", false, "kGym configuration file")
 )
 
 type FileType int
@@ -175,7 +175,14 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 		log.Printf("failed to set up instance: %v", err)
 		return nil
 	}
-	/* TODO: copy the kGym config to remote machine */
+	/* copy the kGym config to remote machine */
+	if *flagkGymCfg {
+		_, err := inst.VMInstance.Copy("kgym-kdump.json")
+		if err != nil {
+			log.Printf("failed to upload kgym-kdump.json")
+			return nil
+		}
+	}
 	defer inst.VMInstance.Close()
 	file := flag.Args()[0]
 	var res *instance.RunResult
