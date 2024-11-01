@@ -282,6 +282,10 @@ func (mon *monitor) monitorExecution() *report.Report {
 	ticker := time.NewTicker(tickerPeriod * mon.inst.timeouts.Scale)
 	defer ticker.Stop()
 	lastExecuteTime := time.Now()
+
+	var retRep *report.Report = nil
+	kDumpEnabled := false
+
 	for {
 		select {
 		case err := <-mon.errc:
@@ -319,8 +323,20 @@ func (mon *monitor) monitorExecution() *report.Report {
 				bytes.Contains(mon.output[lastPos:], executingProgram2) {
 				lastExecuteTime = time.Now()
 			}
+			/* BEGIN: kGym kdump monitoring */
+			if bytes.Contains(mon.output[lastPos:], kexecSetupSuccess) {
+				kDumpEnabled = true
+			}
+			if bytes.Contains(mon.output[lastPos:], successfullyDumped) ||
+				bytes.Contains(mon.output[lastPos:], failedToDump) {
+				return retRep
+			}
+			/* END: kGym kdump monitoring */
 			if mon.reporter.ContainsCrash(mon.output[mon.matchPos:]) {
-				return mon.extractError("unknown error")
+				retRep = mon.extractError("unknown error")
+				if !kDumpEnabled {
+					return retRep
+				}
 			}
 			if len(mon.output) > 2*mon.beforeContext {
 				copy(mon.output, mon.output[len(mon.output)-mon.beforeContext:])
@@ -442,6 +458,11 @@ const (
 var (
 	executingProgram1 = []byte("executing program")  // syz-fuzzer, syz-runner output
 	executingProgram2 = []byte("executed programs:") // syz-execprog output
+
+	/* kGym kDump collection */
+	kexecSetupSuccess  = []byte("[kgym-kdump][2407.02680]kexec-setup-success")
+	successfullyDumped = []byte("[kgym-kdump][2407.02680]succesfully-dumped")
+	failedToDump       = []byte("[kgym-kdump][2407.02680]failed-to-dump")
 
 	beforeContextDefault = 1024 << 10
 	afterContext         = 128 << 10
