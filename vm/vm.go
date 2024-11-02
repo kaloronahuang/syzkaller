@@ -327,12 +327,12 @@ func (mon *monitor) monitorExecution() *report.Report {
 				lastExecuteTime = time.Now()
 			}
 			/* BEGIN: kGym kdump monitoring */
-			if bytes.Contains(mon.output[lastPos:], kexecSetupSuccess) {
+			if bytes.Contains(mon.output[mon.matchPos:], kexecSetupSuccess) {
 				kDumpEnabled = true
 				fmt.Println("kDump setup success")
 			}
-			if bytes.Contains(mon.output[lastPos:], successfullyDumped) ||
-				bytes.Contains(mon.output[lastPos:], failedToDump) {
+			if bytes.Contains(mon.output[mon.matchPos:], successfullyDumped) ||
+				bytes.Contains(mon.output[mon.matchPos:], failedToDump) {
 				fmt.Println("kDump collected it")
 				return retRep
 			}
