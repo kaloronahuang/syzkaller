@@ -164,6 +164,14 @@ func (ctx *Context) CreateInstance(name, machineType, image, sshkey string,
 		DisplayDevice: &compute.DisplayDevice{
 			EnableDisplay: displayDevice,
 		},
+		ServiceAccounts: [
+			&compute.ServiceAccount{
+				Email: "default",
+				Scopes: [
+					"https://www.googleapis.com/auth/cloud-platform"
+				],
+			}
+		],
 	}
 retry:
 	if !instance.Scheduling.Preemptible && strings.HasPrefix(machineType, "e2-") {
