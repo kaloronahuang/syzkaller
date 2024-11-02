@@ -329,9 +329,11 @@ func (mon *monitor) monitorExecution() *report.Report {
 			/* BEGIN: kGym kdump monitoring */
 			if bytes.Contains(mon.output[lastPos:], kexecSetupSuccess) {
 				kDumpEnabled = true
+				fmt.Println("kDump setup success")
 			}
 			if bytes.Contains(mon.output[lastPos:], successfullyDumped) ||
 				bytes.Contains(mon.output[lastPos:], failedToDump) {
+				fmt.Println("kDump collected it")
 				return retRep
 			}
 			/* END: kGym kdump monitoring */
@@ -339,9 +341,11 @@ func (mon *monitor) monitorExecution() *report.Report {
 				retRep = mon.extractError("unknown error")
 				crashed = true
 				crashTime = time.Now()
+				fmt.Println("crash captured")
 				if !kDumpEnabled {
 					return retRep
 				}
+				fmt.Println("wait till crash")
 			}
 			if len(mon.output) > 2*mon.beforeContext {
 				copy(mon.output, mon.output[len(mon.output)-mon.beforeContext:])
@@ -371,6 +375,7 @@ func (mon *monitor) monitorExecution() *report.Report {
 			}
 			// Don't wait for too long if kdump is not working;
 			if crashed && time.Since(crashTime) > 3*time.Minute {
+				fmt.Println("kDump took too long")
 				return retRep
 			}
 		case <-Shutdown:

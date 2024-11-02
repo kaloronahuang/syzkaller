@@ -182,6 +182,7 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 			log.Printf("failed to upload kgym-kdump.json")
 			return nil
 		}
+		log.Printf("uploaded kgym-kdump.json")
 	}
 	defer inst.VMInstance.Close()
 	file := flag.Args()[0]
