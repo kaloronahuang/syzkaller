@@ -283,6 +283,9 @@ func (mon *monitor) monitorExecution() *report.Report {
 	defer ticker.Stop()
 	lastExecuteTime := time.Now()
 
+	crashTime := time.Now()
+	crashed := false
+
 	var retRep *report.Report = nil
 	kDumpEnabled := false
 
@@ -334,6 +337,8 @@ func (mon *monitor) monitorExecution() *report.Report {
 			/* END: kGym kdump monitoring */
 			if mon.reporter.ContainsCrash(mon.output[mon.matchPos:]) {
 				retRep = mon.extractError("unknown error")
+				crashed = true
+				crashTime = time.Now()
 				if !kDumpEnabled {
 					return retRep
 				}
@@ -363,6 +368,10 @@ func (mon *monitor) monitorExecution() *report.Report {
 			// something to console, but fuzzer is not actually executing programs".
 			if time.Since(lastExecuteTime) > mon.inst.timeouts.NoOutput {
 				return mon.extractError(noOutputCrash)
+			}
+			// Don't wait for too long if kdump is not working;
+			if crashed && time.Since(crashTime) > 3*time.Minute {
+				return retRep
 			}
 		case <-Shutdown:
 			return nil
