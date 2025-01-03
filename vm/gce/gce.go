@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -262,6 +263,58 @@ func (inst *instance) Copy(hostSrc string) (string, error) {
 		return "", err
 	}
 	return vmDst, nil
+}
+
+func runWithExitCode(cmd *exec.Cmd) (int, error) {
+	if err := cmd.Start(); err != nil {
+		return -1, err
+	}
+	if err := cmd.Wait(); err != nil {
+		if exiterr, ok := err.(*exec.ExitError); ok {
+			return exiterr.ExitCode(), nil
+		} else {
+			return -1, err
+		}
+	} else {
+		return 0, nil
+	}
+}
+
+func (inst *instance) DumpCollect() (string, error) {
+	// see if vmcore exists
+	args := append(vmimpl.SSHArgs(true, inst.sshKey, 22, false), inst.sshUser+"@"+inst.ip, "test -f /proc/vmcore")
+	cmd := osutil.Command("ssh", args...)
+	exitCode, err := runWithExitCode(cmd)
+	if err != nil {
+		return "", err
+	}
+	if exitCode != 1 {
+		// acceptable
+		return "", nil
+	}
+	// temp file fp;
+	fp, err := os.CreateTemp("/tmp", "kdump-*")
+	if err != nil {
+		return "", err
+	}
+	// SSH stdout to dump file into the temporary file;
+	args = append(vmimpl.SSHArgs(true, inst.sshKey, 22, false), inst.sshUser+"@"+inst.ip, "cat /proc/vmcore | zstd")
+	cmd = osutil.Command("ssh", args...)
+	cmd.Stdout = fp
+	exitCode, err = runWithExitCode(cmd)
+	// wrap up;
+	name := fp.Name()
+	errFp := fp.Close()
+	if errFp != nil {
+		return "", errFp
+	}
+	if err != nil {
+		return "", err
+	}
+	if exitCode != 0 {
+		return "", fmt.Errorf("SSH stdout dump failed")
+	}
+	return name, nil
 }
 
 func (inst *instance) Run(timeout time.Duration, stop <-chan bool, command string) (

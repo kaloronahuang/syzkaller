@@ -33,7 +33,6 @@ var (
 	flagRestartTime = flag.Duration("restart_time", 0, "how long to run the test")
 	flagInfinite    = flag.Bool("infinite", true, "by default test is run for ever, -infinite=false to stop on crash")
 	flagStrace      = flag.Bool("strace", false, "run under strace (binary must be set in the config file")
-	flagkGymCfg     = flag.Bool("kgym_config", false, "kGym configuration file")
 )
 
 type FileType int
@@ -158,6 +157,13 @@ func storeCrash(cfg *mgrconfig.Config, res *instance.RunResult) {
 	if err := osutil.CopyFile(flag.Args()[0], filepath.Join(dir, fmt.Sprintf("reproducer%v", index))); err != nil {
 		log.Printf("failed to write crash reproducer: %v", err)
 	}
+
+	if rep.DumpPath != nil {
+		// save it to folder.
+		if err := osutil.CopyFile(*rep.DumpPath, filepath.Join(dir, fmt.Sprintf("dump%v", index))); err != nil {
+			log.Printf("failed to write kDump file: %v", err)
+		}
+	}
 }
 
 func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
@@ -174,15 +180,6 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 	if err != nil {
 		log.Printf("failed to set up instance: %v", err)
 		return nil
-	}
-	/* copy the kGym config to remote machine */
-	if *flagkGymCfg {
-		_, err := inst.VMInstance.Copy("kgym-kdump.json")
-		if err != nil {
-			log.Printf("failed to upload kgym-kdump.json")
-			return nil
-		}
-		log.Printf("uploaded kgym-kdump.json")
 	}
 	defer inst.VMInstance.Close()
 	file := flag.Args()[0]

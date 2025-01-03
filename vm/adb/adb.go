@@ -9,6 +9,7 @@ package adb
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -495,6 +496,10 @@ func (inst *instance) Copy(hostSrc string) (string, error) {
 		return "", err
 	}
 	return vmDst, nil
+}
+
+func (inst *instance) DumpCollect() (string, error) {
+	return "", errors.New("unsupported")
 }
 
 // Check if the device is cuttlefish on remote vm.

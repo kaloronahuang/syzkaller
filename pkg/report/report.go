@@ -70,6 +70,8 @@ type Report struct {
 	reportPrefixLen int
 	// symbolized is set if the report is symbolized.
 	symbolized bool
+	// dump file path
+	DumpPath *string
 }
 
 func (r Report) String() string {

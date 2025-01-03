@@ -9,6 +9,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -446,6 +447,10 @@ func (inst *instance) Copy(hostSrc string) (string, error) {
 	}
 
 	return reply.VMFileName, nil
+}
+
+func (inst *instance) DumpCollect() (string, error) {
+	return "", errors.New("unsupported")
 }
 
 // Forward sets up forwarding from within VM to the given tcp

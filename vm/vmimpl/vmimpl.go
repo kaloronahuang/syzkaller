@@ -38,6 +38,9 @@ type Instance interface {
 	// Copy copies a hostSrc file into VM and returns file name in VM.
 	Copy(hostSrc string) (string, error)
 
+	// Collect kDump into a temporary file and return the path.
+	DumpCollect() (string, error)
+
 	// Forward sets up forwarding from within VM to the given tcp
 	// port on the host and returns the address to use in VM.
 	Forward(port int) (string, error)

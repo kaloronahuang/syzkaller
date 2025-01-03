@@ -181,6 +181,10 @@ func (inst *Instance) Copy(hostSrc string) (string, error) {
 	return inst.impl.Copy(hostSrc)
 }
 
+func (inst *Instance) DumpCollect() (string, error) {
+	return inst.impl.DumpCollect()
+}
+
 func (inst *Instance) Forward(port int) (string, error) {
 	return inst.impl.Forward(port)
 }
@@ -283,10 +287,6 @@ func (mon *monitor) monitorExecution() *report.Report {
 	defer ticker.Stop()
 	lastExecuteTime := time.Now()
 
-	crashTime := time.Now()
-	crashed := false
-
-	var retRep *report.Report = nil
 	kDumpEnabled := false
 
 	for {
@@ -300,10 +300,10 @@ func (mon *monitor) monitorExecution() *report.Report {
 				if mon.exit&ExitNormal == 0 {
 					crash = lostConnectionCrash
 				}
-				return mon.extractError(crash)
+				return mon.extractError(crash, kDumpEnabled)
 			case ErrTimeout:
 				if mon.exit&ExitTimeout == 0 {
-					return mon.extractError(timeoutCrash)
+					return mon.extractError(timeoutCrash, kDumpEnabled)
 				}
 				return nil
 			default:
@@ -313,7 +313,7 @@ func (mon *monitor) monitorExecution() *report.Report {
 				if mon.exit&ExitError == 0 {
 					crash = lostConnectionCrash
 				}
-				return mon.extractError(crash)
+				return mon.extractError(crash, kDumpEnabled)
 			}
 		case out, ok := <-mon.outc:
 			if !ok {
@@ -331,21 +331,9 @@ func (mon *monitor) monitorExecution() *report.Report {
 				kDumpEnabled = true
 				fmt.Println("kDump setup success")
 			}
-			if bytes.Contains(mon.output[mon.matchPos:], successfullyDumped) ||
-				bytes.Contains(mon.output[mon.matchPos:], failedToDump) {
-				fmt.Println("kDump collected it")
-				return retRep
-			}
 			/* END: kGym kdump monitoring */
 			if mon.reporter.ContainsCrash(mon.output[mon.matchPos:]) {
-				retRep = mon.extractError("unknown error")
-				crashed = true
-				crashTime = time.Now()
-				fmt.Println("crash captured")
-				if !kDumpEnabled {
-					return retRep
-				}
-				fmt.Println("wait till crash")
+				return mon.extractError("unknown error", kDumpEnabled)
 			}
 			if len(mon.output) > 2*mon.beforeContext {
 				copy(mon.output, mon.output[len(mon.output)-mon.beforeContext:])
@@ -371,12 +359,7 @@ func (mon *monitor) monitorExecution() *report.Report {
 			// Detect both "no output whatsoever" and "kernel episodically prints
 			// something to console, but fuzzer is not actually executing programs".
 			if time.Since(lastExecuteTime) > mon.inst.timeouts.NoOutput {
-				return mon.extractError(noOutputCrash)
-			}
-			// Don't wait for too long if kdump is not working;
-			if crashed && time.Since(crashTime) > 3*time.Minute {
-				fmt.Println("kDump took too long")
-				return retRep
+				return mon.extractError(noOutputCrash, kDumpEnabled)
 			}
 		case <-Shutdown:
 			return nil
@@ -384,7 +367,7 @@ func (mon *monitor) monitorExecution() *report.Report {
 	}
 }
 
-func (mon *monitor) extractError(defaultError string) *report.Report {
+func (mon *monitor) extractError(defaultError string, kDumpEnabled bool) *report.Report {
 	diagOutput, diagWait := []byte{}, false
 	if defaultError != "" {
 		diagOutput, diagWait = mon.inst.diagnose(mon.createReport(defaultError))
@@ -412,6 +395,17 @@ func (mon *monitor) extractError(defaultError string) *report.Report {
 		rep.Output = append(rep.Output, vmDiagnosisStart...)
 		rep.Output = append(rep.Output, diagOutput...)
 	}
+
+	if !kDumpEnabled {
+		return rep
+	}
+
+	// Attempting SSH for some time;
+	dumpPath, err := mon.inst.impl.DumpCollect()
+	if err == nil {
+		rep.DumpPath = &dumpPath
+	}
+
 	return rep
 }
 

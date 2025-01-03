@@ -11,6 +11,7 @@
 package cuttlefish
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -131,6 +132,10 @@ func (inst *instance) Copy(hostSrc string) (string, error) {
 	}
 
 	return deviceDst, nil
+}
+
+func (inst *instance) DumpCollect() (string, error) {
+	return "", errors.New("unsupported")
 }
 
 func (inst *instance) Forward(port int) (string, error) {

@@ -6,6 +6,7 @@ package qemu
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -642,6 +643,10 @@ func (inst *instance) Copy(hostSrc string) (string, error) {
 		return "", err
 	}
 	return vmDst, nil
+}
+
+func (inst *instance) DumpCollect() (string, error) {
+	return "", errors.New("unsupported")
 }
 
 func (inst *instance) Run(timeout time.Duration, stop <-chan bool, command string) (

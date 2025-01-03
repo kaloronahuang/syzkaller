@@ -5,6 +5,7 @@ package starnix
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -344,6 +345,10 @@ func (inst *instance) Copy(hostSrc string) (string, error) {
 		}
 		vmimpl.SleepInterruptible(inst.adbRetryWait)
 	}
+}
+
+func (inst *instance) DumpCollect() (string, error) {
+	return "", errors.New("unsupported")
 }
 
 func (inst *instance) Run(timeout time.Duration, stop <-chan bool, command string) (
