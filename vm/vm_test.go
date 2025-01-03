@@ -44,6 +44,10 @@ func (inst *testInstance) Copy(hostSrc string) (string, error) {
 	return "", nil
 }
 
+func (inst *testInstance) DumpCollect() (string, error) {
+	return "", nil
+}
+
 func (inst *testInstance) Forward(port int) (string, error) {
 	return "", nil
 }
