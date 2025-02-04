@@ -1,0 +1,124 @@
+#!/usr/bin/python3
+
+# specs:
+# S99syz-helper ftrace /path/to/func/list
+# S99syz-helper dump > stdout
+
+import subprocess as sp
+import os, json, sys
+from traceback import format_exc
+
+VMCORE_PATH = '/proc/vmcore'
+KDUMP_PATH = '/tmp/kgym-dump'
+
+def get_instance_identifier(vm_type: str) -> str:
+    if vm_type == 'gcp':
+        import requests
+        metadata_server = "http://metadata/computeMetadata/v1/instance/"
+        metadata_flavor = {'Metadata-Flavor' : 'Google'}
+        resp = requests.get(metadata_server + 'hostname', headers=metadata_flavor)
+        if resp.status_code != 200:
+            raise Exception()
+        return resp.text.split('.', maxsplit=1)[0]
+    else:
+        return 'undefined'
+
+def print_kgym_code(code: str):
+    print(f'[kgym-kdump][2407.02680]{code}\n' * 20, end='')
+
+def upload_to_storage_provider(storage_cfg: dict, path: str):
+    with open(KDUMP_PATH, 'rb') as dump_fp:
+        provider_config = storage_cfg.get('provider-config', dict())
+        try:
+            if storage_cfg['provider'] == 'gcp':
+                from google.cloud import storage
+                client = storage.Client()
+                bucket = client.bucket(provider_config['bucket-name'])
+                blob = bucket.blob(path)
+                blob.upload_from_file(dump_fp)
+            elif storage_cfg['provider'] == 'ssh':
+                ssh_args = [
+                    'ssh',
+                    '-o', 'StrictHostKeyChecking=no',
+                    '-i', '/root/.ssh/kdump_id_rsa',
+                    '-p', provider_config['port'],
+                    provider_config['username'] + '@' + provider_config['hostname']
+                ]
+                # make dir;
+                ssh_proc = sp.Popen([
+                    *ssh_args,
+                    'mkdir', '-p', os.path.dirname(path)
+                ], stdin=sp.DEVNULL)
+                code = ssh_proc.wait()
+                if code != 0:
+                    return 1
+                # upload;
+                ssh_proc = sp.Popen([
+                    *ssh_args,
+                    'dd', f'of={path}'
+                ], stdin=dump_fp)
+                return ssh_proc.wait()
+            else:
+                return 1
+            return 0
+        except:
+            print(format_exc())
+            return 1
+
+def collect_kdump(cfg: dict):
+    with open(KDUMP_PATH, 'wb') as dump_fp:
+        mdf_proc = sp.Popen([
+            '/usr/sbin/makedumpfile',
+            '-F',
+            *cfg['makedumpfile-arguments'],
+            VMCORE_PATH
+        ], stdout=sp.PIPE)
+        zstd_proc = sp.Popen(
+            ['zstd'],
+            stdin=mdf_proc.stdout,
+            stdout=dump_fp
+        )
+    uploader_code = upload_to_storage_provider(
+        cfg['storage'],
+        os.path.join(
+            cfg['storage-path'],
+            get_instance_identifier(cfg['vm-type']),
+            'dump.zstd'
+        )
+    )
+    if uploader_code != 0:
+        mdf_proc.kill()
+        zstd_proc.kill()
+        print_kgym_code('failed-to-dump')
+    else:
+        mdf_code = mdf_proc.wait()
+        zstd_code = zstd_proc.wait()
+        if mdf_code != 0 or zstd_code != 0:
+            print_kgym_code('failed-to-dump')
+        else:
+            print_kgym_code('succesfully-dumped')
+
+if __name__ == '__main__':
+    if sys.argv[1] != 'start' or not os.path.exists(VMCORE_PATH):
+        exit(0)
+    kdump_cfg = (
+        '/etc/kgym-kdump.json',
+        '/root/kgym-kdump.json',
+        '/kgym-kdump.json'
+    )
+    kdump_cfg_path = None
+    for p in kdump_cfg:
+        if os.path.exists(p):
+            kdump_cfg_path = p
+    if kdump_cfg_path is None:
+        print_kgym_code('failed-to-dump')
+    else:
+        with open(kdump_cfg_path, 'r') as fp:
+            cfg = json.load(fp)
+        print(cfg)
+        try:
+            collect_kdump(cfg)
+        except Exception as e:
+            print(format_exc())
+            print_kgym_code('failed-to-dump')
+    os.system('reboot')

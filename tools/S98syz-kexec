@@ -1,0 +1,27 @@
+#!/bin/sh
+
+VMCORE_FILE=/proc/vmcore
+
+case "$1" in
+  start)
+	  if ! { [ -e $VMCORE_FILE ] && [ -s $VMCORE_FILE ]; } then
+        kexec --type bzImage -p /var/kgym-dump/rescue-kernel.bzImage --append="root=/dev/sda1 console=ttyS0"
+        if [ $? -eq 0 ]; then
+            printf "[kgym-kdump][2407.02680]kexec-setup-success\n[kgym-kdump][2407.02680]kexec-setup-success\n[kgym-kdump][2407.02680]kexec-setup-success\n[kgym-kdump][2407.02680]kexec-setup-success\n[kgym-kdump][2407.02680]kexec-setup-success\n[kgym-kdump][2407.02680]kexec-setup-success\n[kgym-kdump][2407.02680]kexec-setup-success\n[kgym-kdump][2407.02680]kexec-setup-success\n[kgym-kdump][2407.02680]kexec-setup-success\n[kgym-kdump][2407.02680]kexec-setup-success\n[kgym-kdump][2407.02680]kexec-setup-success\n[kgym-kdump][2407.02680]kexec-setup-success\n[kgym-kdump][2407.02680]kexec-setup-success\n[kgym-kdump][2407.02680]kexec-setup-success\n[kgym-kdump][2407.02680]kexec-setup-success\n[kgym-kdump][2407.02680]kexec-setup-success\n[kgym-kdump][2407.02680]kexec-setup-success\n[kgym-kdump][2407.02680]kexec-setup-success\n[kgym-kdump][2407.02680]kexec-setup-success\n[kgym-kdump][2407.02680]kexec-setup-success\n"
+        else
+            printf "[kgym-kdump][2407.02680]kexec-setup-failure\n[kgym-kdump][2407.02680]kexec-setup-failure\n[kgym-kdump][2407.02680]kexec-setup-failure\n[kgym-kdump][2407.02680]kexec-setup-failure\n[kgym-kdump][2407.02680]kexec-setup-failure\n[kgym-kdump][2407.02680]kexec-setup-failure\n[kgym-kdump][2407.02680]kexec-setup-failure\n[kgym-kdump][2407.02680]kexec-setup-failure\n[kgym-kdump][2407.02680]kexec-setup-failure\n[kgym-kdump][2407.02680]kexec-setup-failure\n[kgym-kdump][2407.02680]kexec-setup-failure\n[kgym-kdump][2407.02680]kexec-setup-failure\n[kgym-kdump][2407.02680]kexec-setup-failure\n[kgym-kdump][2407.02680]kexec-setup-failure\n[kgym-kdump][2407.02680]kexec-setup-failure\n[kgym-kdump][2407.02680]kexec-setup-failure\n[kgym-kdump][2407.02680]kexec-setup-failure\n[kgym-kdump][2407.02680]kexec-setup-failure\n[kgym-kdump][2407.02680]kexec-setup-failure\n[kgym-kdump][2407.02680]kexec-setup-failure\n"
+        fi
+    else
+      for iface in $(ifconfig | sed 's/[ \t].*//;/^$/d'); do
+        if [ $iface != "eth0" ] && [ $iface != "lo" ]; then
+          ifconfig $iface down
+        fi
+      done
+      printf "[kgym-kdump][2407.02680]brought-down-unnecessary-interfaces\n"
+      sleep 15s
+    fi
+    ;;
+  *)
+    exit 0
+esac
+exit 0

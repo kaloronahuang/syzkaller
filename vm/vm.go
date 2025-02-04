@@ -404,6 +404,8 @@ func (mon *monitor) extractError(defaultError string, kDumpEnabled bool) *report
 	dumpPath, err := mon.inst.impl.DumpCollect()
 	if err == nil {
 		rep.DumpPath = &dumpPath
+	} else {
+		rep.DumpPath = nil
 	}
 
 	return rep
