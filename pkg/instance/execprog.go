@@ -25,6 +25,8 @@ type OptionalConfig struct {
 	OldFlagsCompatMode bool
 	BeforeContextLen   int
 	StraceBin          string
+	FtraceFuncList     string
+	FtraceBufferSize   int
 }
 
 type ExecProgInstance struct {
@@ -67,6 +69,32 @@ func SetupExecProg(vmInst *vm.Instance, mgrCfg *mgrconfig.Config, reporter *repo
 			ret.StraceBin, err = vmInst.Copy(ret.StraceBin)
 			if err != nil {
 				return nil, &TestError{Title: fmt.Sprintf("failed to copy strace bin: %v", err)}
+			}
+		}
+		if ret.FtraceFuncList != "" {
+			var err error
+			ret.FtraceFuncList, err = vmInst.Copy(ret.FtraceFuncList)
+			if err != nil {
+				return nil, &TestError{Title: fmt.Sprintf("failed to copy ftrace func list: %v", err)}
+			}
+			ftraceCmd := fmt.Sprintf(
+				"%v && %v && %v && %v && %v && %v && %v && %v && %v",
+				"test -e /proc/sys/kernel/ftrace_dump_on_oops",
+				"test -e /sys/kernel/debug/tracing/set_ftrace_filter",
+				"echo \"\" > /sys/kernel/debug/tracing/trace",
+				"echo \"\" > /sys/kernel/debug/tracing/set_event_pid",
+				"echo 1 > /proc/sys/kernel/ftrace_dump_on_oops",
+				"echo "+fmt.Sprintf("%v", ret.FtraceBufferSize)+" > /sys/kernel/debug/tracing/buffer_size_kb",
+				"cat "+ret.FtraceFuncList+" > /sys/kernel/debug/tracing/set_ftrace_filter",
+				"echo function > /sys/kernel/debug/tracing/current_tracer",
+				"echo 1 > /sys/kernel/debug/tracing/tracing_on")
+			_, errc, err := vmInst.Run(30*time.Second, nil, ftraceCmd)
+			ftraceErr := <-errc
+			if ftraceErr != nil {
+				return nil, &TestError{Title: fmt.Sprintf("failed to setup func list: %v", ftraceErr)}
+			}
+			if err != nil {
+				return nil, &TestError{Title: fmt.Sprintf("failed to setup func list: %v", err)}
 			}
 		}
 	}

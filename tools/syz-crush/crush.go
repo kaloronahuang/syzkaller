@@ -28,11 +28,13 @@ import (
 )
 
 var (
-	flagConfig      = flag.String("config", "", "manager configuration file")
-	flagDebug       = flag.Bool("debug", false, "dump all VM output to console")
-	flagRestartTime = flag.Duration("restart_time", 0, "how long to run the test")
-	flagInfinite    = flag.Bool("infinite", true, "by default test is run for ever, -infinite=false to stop on crash")
-	flagStrace      = flag.Bool("strace", false, "run under strace (binary must be set in the config file")
+	flagConfig           = flag.String("config", "", "manager configuration file")
+	flagDebug            = flag.Bool("debug", false, "dump all VM output to console")
+	flagRestartTime      = flag.Duration("restart_time", 0, "how long to run the test")
+	flagInfinite         = flag.Bool("infinite", true, "by default test is run for ever, -infinite=false to stop on crash")
+	flagStrace           = flag.Bool("strace", false, "run under strace (binary must be set in the config file")
+	flagFtrace           = flag.String("ftrace", "", "ftrace function list file")
+	flagFtraceBufferSize = flag.Int("ftrace_bufsiz", 204800, "buffer size in kb")
 )
 
 type FileType int
@@ -167,6 +169,10 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 	}
 	if *flagStrace {
 		optArgs.StraceBin = cfg.StraceBin
+	}
+	if *flagFtrace != "" {
+		optArgs.FtraceFuncList = *flagFtrace
+		optArgs.FtraceBufferSize = *flagFtraceBufferSize
 	}
 	var err error
 	inst, err := instance.CreateExecProgInstance(vmPool, index, cfg, reporter, optArgs)
