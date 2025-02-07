@@ -85,7 +85,7 @@ func SetupExecProg(vmInst *vm.Instance, mgrCfg *mgrconfig.Config, reporter *repo
 				"echo \"\" > /sys/kernel/debug/tracing/set_event_pid",
 				"echo 1 > /proc/sys/kernel/ftrace_dump_on_oops",
 				"echo "+fmt.Sprintf("%v", ret.FtraceBufferSize)+" > /sys/kernel/debug/tracing/buffer_size_kb",
-				"cat "+ret.FtraceFuncList+" > /sys/kernel/debug/tracing/set_ftrace_filter",
+				"cat <(cat /sys/kernel/debug/tracing/available_filter_functions | sort | uniq -u) <(cat "+ret.FtraceFuncList+" | sort | uniq -u) | sort | uniq -d > /sys/kernel/debug/tracing/set_ftrace_filter",
 				"echo function > /sys/kernel/debug/tracing/current_tracer",
 				"echo 1 > /sys/kernel/debug/tracing/tracing_on")
 			_, errc, err := vmInst.Run(30*time.Second, nil, ftraceCmd)
