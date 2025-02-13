@@ -210,6 +210,9 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 	}
 	if res.Report != nil {
 		log.Printf("vm-%v: crash: %v", index, res.Report.Title)
+		if !*flagKdump {
+			return res
+		}
 		kdumpPath, errc, err := inst.VMInstance.ExtractKdump(3*time.Minute, *flagKdumpArgs)
 		if err != nil {
 			log.Fatalf("failed to extract kdump: %v", err)
