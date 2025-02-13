@@ -100,7 +100,7 @@ func SetupExecProg(vmInst *vm.Instance, mgrCfg *mgrconfig.Config, reporter *repo
 			}
 		}
 		if ret.Kdump {
-			kexecCmd := "kexec -p /var/rescue-kernel.bzImage --append=\"root=/dev/sda1 console=ttyS0\" && echo KEXEC_FINISHED"
+			kexecCmd := "kexec -p /var/rescue-kernel.bzImage --append=\"root=/dev/sda1 console=ttyS0 net.ifnames=0\" && echo KEXEC_FINISHED"
 			kexecOutput := []byte{}
 			outc, errc, err := vmInst.Run(30*time.Second, nil, kexecCmd)
 			if err != nil {

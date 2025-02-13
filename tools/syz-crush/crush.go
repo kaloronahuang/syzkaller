@@ -162,7 +162,7 @@ func storeCrash(cfg *mgrconfig.Config, res *instance.RunResult) {
 		log.Printf("failed to write crash reproducer: %v", err)
 	}
 
-	if err := osutil.CopyFile(rep.KdumpPath, filepath.Join(dir, fmt.Sprintf("kdump%v.zstd", index))); err != nil {
+	if err := osutil.CopyFile(rep.KdumpPath, filepath.Join(dir, fmt.Sprintf("kdump%v", index))); err != nil {
 		log.Printf("failed to write crash core dump: %v", err)
 	}
 }

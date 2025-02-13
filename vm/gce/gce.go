@@ -382,9 +382,9 @@ func (inst *instance) Run(timeout time.Duration, stop <-chan bool, command strin
 
 func (inst *instance) ExtractKdump(timeout time.Duration, mkdumpfileArgs string) (
 	string, <-chan error, error) {
-	mkdumpCmd := fmt.Sprintf("/usr/sbin/makedumpfile -F %v /proc/vmcore | zstd", mkdumpfileArgs)
+	mkdumpCmd := fmt.Sprintf("/usr/sbin/makedumpfile -F %v /proc/vmcore", mkdumpfileArgs)
 
-	dumpFp, err := os.CreateTemp("", "kdump-*.zstd")
+	dumpFp, err := os.CreateTemp("", "kdump-*")
 	if err != nil {
 		return "", nil, err
 	}
