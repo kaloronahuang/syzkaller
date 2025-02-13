@@ -4,6 +4,7 @@
 package instance
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"time"
@@ -27,6 +28,7 @@ type OptionalConfig struct {
 	StraceBin          string
 	FtraceFuncList     string
 	FtraceBufferSize   int
+	Kdump              bool
 }
 
 type ExecProgInstance struct {
@@ -95,6 +97,29 @@ func SetupExecProg(vmInst *vm.Instance, mgrCfg *mgrconfig.Config, reporter *repo
 			}
 			if err != nil {
 				return nil, &TestError{Title: fmt.Sprintf("failed to setup func list: %v", err)}
+			}
+		}
+		if ret.Kdump {
+			kexecCmd := "kexec -p /var/kgym-dump/rescue-kernel.bzImage --append=\"root=/dev/sda1 console=ttyS0\" && echo KEXEC_FINISHED"
+			kexecOutput := []byte{}
+			outc, errc, err := vmInst.Run(30*time.Second, nil, kexecCmd)
+			if err != nil {
+				return nil, &TestError{Title: fmt.Sprintf("failed to setup kdump: %v", err)}
+			}
+			kexecFinished := false
+			for !kexecFinished {
+				select {
+				case outBytes := <-outc:
+					kexecOutput = append(kexecOutput, outBytes...)
+				case kdumpErr := <-errc:
+					if kdumpErr != nil {
+						return nil, &TestError{Title: fmt.Sprintf("failed to setup kdump: %v", kdumpErr)}
+					}
+					kexecFinished = true
+				}
+			}
+			if !bytes.Contains(kexecOutput, []byte("\nKEXEC_FINISHED")) {
+				return nil, &TestError{Title: "failed to setup kdump: kexec error"}
 			}
 		}
 	}

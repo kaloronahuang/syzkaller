@@ -190,6 +190,11 @@ func (inst *Instance) Run(timeout time.Duration, stop <-chan bool, command strin
 	return inst.impl.Run(timeout, stop, command)
 }
 
+func (inst *Instance) ExtractKdump(timeout time.Duration, mkdumpfileArgs string) (
+	dumpPath string, errc <-chan error, err error) {
+	return inst.impl.ExtractKdump(timeout, mkdumpfileArgs)
+}
+
 func (inst *Instance) Info() ([]byte, error) {
 	if ii, ok := inst.impl.(vmimpl.Infoer); ok {
 		return ii.Info()

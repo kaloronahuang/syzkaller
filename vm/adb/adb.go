@@ -555,6 +555,11 @@ func (inst *instance) Run(timeout time.Duration, stop <-chan bool, command strin
 	return vmimpl.Multiplex(adb, merger, tty, timeout, stop, inst.closed, inst.debug)
 }
 
+func (inst *instance) ExtractKdump(timeout time.Duration, mkdumpfileArgs string) (
+	string, <-chan error, error) {
+	return "", nil, fmt.Errorf("not implemented")
+}
+
 func (inst *instance) Diagnose(rep *report.Report) ([]byte, bool) {
 	return nil, false
 }

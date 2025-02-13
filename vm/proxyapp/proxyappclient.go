@@ -545,6 +545,11 @@ func (inst *instance) Run(
 	return outc, terminationError, nil
 }
 
+func (inst *instance) ExtractKdump(timeout time.Duration, mkdumpfileArgs string) (
+	string, <-chan error, error) {
+	return "", nil, fmt.Errorf("not implemented")
+}
+
 func (inst *instance) runStop(runID string) {
 	err := inst.ProxyApp.Call(
 		"ProxyVM.RunStop",

@@ -380,6 +380,135 @@ func (inst *instance) Run(timeout time.Duration, stop <-chan bool, command strin
 	return merger.Output, errc, nil
 }
 
+func (inst *instance) ExtractKdump(timeout time.Duration, mkdumpfileArgs string) (
+	string, <-chan error, error) {
+	mkdumpCmd := fmt.Sprintf("/usr/sbin/makedumpfile -F %v /proc/vmcore | zstd", mkdumpfileArgs)
+
+	dumpFp, err := os.CreateTemp("", "kdump-*.zstd")
+	if err != nil {
+		return "", nil, err
+	}
+
+	conRpipe, conWpipe, err := osutil.LongPipe()
+	if err != nil {
+		dumpFp.Close()
+		return "", nil, err
+	}
+
+	var conArgs []string
+	if inst.consoleReadCmd == "" {
+		conArgs = inst.serialPortArgs(false)
+	} else {
+		conArgs = inst.sshArgs(inst.consoleReadCmd)
+	}
+	con := osutil.Command("ssh", conArgs...)
+	con.Env = []string{}
+	con.Stdout = conWpipe
+	con.Stderr = conWpipe
+	conw, err := con.StdinPipe()
+	if err != nil {
+		conRpipe.Close()
+		conWpipe.Close()
+		dumpFp.Close()
+		return "", nil, err
+	}
+	if inst.consolew != nil {
+		inst.consolew.Close()
+	}
+	inst.consolew = conw
+	if err := con.Start(); err != nil {
+		conRpipe.Close()
+		conWpipe.Close()
+		dumpFp.Close()
+		return "", nil, fmt.Errorf("failed to connect to console server: %w", err)
+	}
+	conWpipe.Close()
+
+	merger := vmimpl.NewOutputMerger(nil)
+	var decoder func(data []byte) (int, int, []byte)
+	if inst.env.OS == targets.Windows {
+		decoder = kd.Decode
+	}
+	merger.AddDecoder("console", conRpipe, decoder)
+	if err := waitForConsoleConnect(merger); err != nil {
+		con.Process.Kill()
+		merger.Wait()
+		dumpFp.Close()
+		return "", nil, err
+	}
+	sshRpipe, sshWpipe, err := osutil.LongPipe()
+	if err != nil {
+		con.Process.Kill()
+		merger.Wait()
+		sshRpipe.Close()
+		dumpFp.Close()
+		return "", nil, err
+	}
+	ssh := osutil.Command("ssh", inst.sshArgs(mkdumpCmd)...)
+	ssh.Stdout = dumpFp
+	ssh.Stderr = sshWpipe
+	if err := ssh.Start(); err != nil {
+		con.Process.Kill()
+		merger.Wait()
+		sshRpipe.Close()
+		sshWpipe.Close()
+		dumpFp.Close()
+		return "", nil, fmt.Errorf("failed to connect to instance: %w", err)
+	}
+	sshWpipe.Close()
+	merger.Add("ssh", sshRpipe)
+
+	errc := make(chan error, 1)
+	signal := func(err error) {
+		select {
+		case errc <- err:
+		default:
+		}
+	}
+
+	go func() {
+		select {
+		case <-time.After(timeout):
+			signal(vmimpl.ErrTimeout)
+		case <-inst.closed:
+			signal(fmt.Errorf("instance closed"))
+		case err := <-merger.Err:
+			con.Process.Kill()
+			ssh.Process.Kill()
+			merger.Wait()
+			con.Wait()
+			var mergeError *vmimpl.MergerError
+			if cmdErr := ssh.Wait(); cmdErr == nil {
+				// If the command exited successfully, we got EOF error from merger.
+				// But in this case no error has happened and the EOF is expected.
+				err = nil
+			} else if errors.As(err, &mergeError) && mergeError.R == conRpipe {
+				// Console connection must never fail. If it does, it's either
+				// instance preemption or a GCE bug. In either case, not a kernel bug.
+				log.Logf(0, "%v: gce console connection failed with %v", inst.name, mergeError.Err)
+				err = vmimpl.ErrTimeout
+			} else {
+				// Check if the instance was terminated due to preemption or host maintenance.
+				time.Sleep(5 * time.Second) // just to avoid any GCE races
+				if !inst.GCE.IsInstanceRunning(inst.name) {
+					log.Logf(0, "%v: ssh exited but instance is not running", inst.name)
+					err = vmimpl.ErrTimeout
+				}
+			}
+			dumpFp.Close()
+			signal(err)
+			return
+		}
+		dumpFp.Close()
+		con.Process.Kill()
+		ssh.Process.Kill()
+		merger.Wait()
+		con.Wait()
+		ssh.Wait()
+	}()
+	return dumpFp.Name(), errc, nil
+}
+
 func waitForConsoleConnect(merger *vmimpl.OutputMerger) error {
 	// We've started the console reading ssh command, but it has not necessary connected yet.
 	// If we proceed to running the target command right away, we can miss part

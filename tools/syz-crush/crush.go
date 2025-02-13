@@ -35,6 +35,8 @@ var (
 	flagStrace           = flag.Bool("strace", false, "run under strace (binary must be set in the config file")
 	flagFtrace           = flag.String("ftrace", "", "ftrace function list file")
 	flagFtraceBufferSize = flag.Int("ftrace_bufsiz", 204800, "buffer size in kb")
+	flagKdump            = flag.Bool("kdump", false, "capture kdump when crashing")
+	flagKdumpArgs        = flag.String("kdump_args", "-c -d 17", "makedumpfile arguments")
 )
 
 type FileType int
@@ -159,6 +161,10 @@ func storeCrash(cfg *mgrconfig.Config, res *instance.RunResult) {
 	if err := osutil.CopyFile(flag.Args()[0], filepath.Join(dir, fmt.Sprintf("reproducer%v", index))); err != nil {
 		log.Printf("failed to write crash reproducer: %v", err)
 	}
+
+	if err := osutil.CopyFile(rep.KdumpPath, filepath.Join(dir, fmt.Sprintf("kdump%v.zstd", index))); err != nil {
+		log.Printf("failed to write crash core dump: %v", err)
+	}
 }
 
 func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
@@ -173,6 +179,9 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 	if *flagFtrace != "" {
 		optArgs.FtraceFuncList = *flagFtrace
 		optArgs.FtraceBufferSize = *flagFtraceBufferSize
+	}
+	if *flagKdump {
+		optArgs.Kdump = *flagKdump
 	}
 	var err error
 	inst, err := instance.CreateExecProgInstance(vmPool, index, cfg, reporter, optArgs)
@@ -201,6 +210,17 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 	}
 	if res.Report != nil {
 		log.Printf("vm-%v: crash: %v", index, res.Report.Title)
+		kdumpPath, errc, err := inst.VMInstance.ExtractKdump(3*time.Minute, *flagKdumpArgs)
+		if err != nil {
+			log.Fatalf("failed to extract kdump: %v", err)
+			return nil
+		}
+		err = <-errc
+		if err != nil {
+			log.Fatalf("failed to extract kdump: %v", err)
+			return nil
+		}
+		res.Report.KdumpPath = kdumpPath
 		return res
 	}
 	log.Printf("vm-%v: running long enough, stopping", index)

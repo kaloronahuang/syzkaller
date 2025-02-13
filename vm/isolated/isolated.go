@@ -360,6 +360,11 @@ func (inst *instance) Run(timeout time.Duration, stop <-chan bool, command strin
 	return vmimpl.Multiplex(cmd, merger, dmesg, timeout, stop, inst.closed, inst.debug)
 }
 
+func (inst *instance) ExtractKdump(timeout time.Duration, mkdumpfileArgs string) (
+	string, <-chan error, error) {
+	return "", nil, fmt.Errorf("not implemented")
+}
+
 func (inst *instance) readPstoreContents() ([]byte, error) {
 	log.Logf(0, "reading pstore contents")
 	args := append(vmimpl.SSHArgs(inst.debug, inst.sshKey, inst.targetPort, inst.cfg.SystemSSHCfg),

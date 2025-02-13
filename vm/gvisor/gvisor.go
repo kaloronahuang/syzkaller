@@ -366,6 +366,11 @@ func (inst *instance) Run(timeout time.Duration, stop <-chan bool, command strin
 	return inst.merger.Output, errc, nil
 }
 
+func (inst *instance) ExtractKdump(timeout time.Duration, mkdumpfileArgs string) (
+	string, <-chan error, error) {
+	return "", nil, fmt.Errorf("not implemented")
+}
+
 func (inst *instance) guestProxy() (*os.File, error) {
 	if inst.port == 0 {
 		return nil, nil
