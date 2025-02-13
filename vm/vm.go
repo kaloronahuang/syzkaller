@@ -452,5 +452,5 @@ var (
 	afterContext         = 128 << 10
 
 	tickerPeriod         = 10 * time.Second
-	waitForOutputTimeout = 10 * time.Second
+	waitForOutputTimeout = 1 * time.Minute
 )
