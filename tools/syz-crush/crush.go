@@ -215,12 +215,12 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 		}
 		kdumpPath, errc, err := inst.VMInstance.ExtractKdump(3*time.Minute, *flagKdumpArgs)
 		if err != nil {
-			log.Fatalf("failed to extract kdump: %v", err)
+			log.Printf("failed to extract kdump: %v", err)
 			return res
 		}
 		err = <-errc
 		if err != nil {
-			log.Fatalf("failed to extract kdump: %v", err)
+			log.Printf("failed to extract kdump: %v", err)
 			return res
 		}
 		res.Report.KdumpPath = kdumpPath
