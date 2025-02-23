@@ -35,6 +35,7 @@ var (
 	flagStrace           = flag.Bool("strace", false, "run under strace (binary must be set in the config file")
 	flagFtrace           = flag.String("ftrace", "", "ftrace function list file")
 	flagFtraceBufferSize = flag.Int("ftrace_bufsiz", 204800, "buffer size in kb")
+	flagFtraceDumpOnOops = flag.Bool("ftrace_dump_on_oops", true, "if dump_on_oops is set")
 	flagKdump            = flag.Bool("kdump", false, "capture kdump when crashing")
 	flagKdumpArgs        = flag.String("kdump_args", "-c -d 17", "makedumpfile arguments")
 )
@@ -179,6 +180,7 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 	if *flagFtrace != "" {
 		optArgs.FtraceFuncList = *flagFtrace
 		optArgs.FtraceBufferSize = *flagFtraceBufferSize
+		optArgs.FtraceDumpOnOops = *flagFtraceDumpOnOops
 	}
 	if *flagKdump {
 		optArgs.Kdump = *flagKdump

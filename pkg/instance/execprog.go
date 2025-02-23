@@ -28,6 +28,7 @@ type OptionalConfig struct {
 	StraceBin          string
 	FtraceFuncList     string
 	FtraceBufferSize   int
+	FtraceDumpOnOops   bool
 	Kdump              bool
 }
 
@@ -79,13 +80,17 @@ func SetupExecProg(vmInst *vm.Instance, mgrCfg *mgrconfig.Config, reporter *repo
 			if err != nil {
 				return nil, &TestError{Title: fmt.Sprintf("failed to copy ftrace func list: %v", err)}
 			}
+			oopsCmd := "&&"
+			if ret.FtraceDumpOnOops {
+				oopsCmd = "&& echo 1 > /proc/sys/kernel/ftrace_dump_on_oops &&"
+			}
 			ftraceCmd := fmt.Sprintf(
-				"%v && %v && %v && %v && %v && %v && %v && %v && %v",
+				"%v && %v && %v && %v %v %v && %v && %v && %v",
 				"test -e /proc/sys/kernel/ftrace_dump_on_oops",
 				"test -e /sys/kernel/debug/tracing/set_ftrace_filter",
 				"echo \"\" > /sys/kernel/debug/tracing/trace",
 				"echo \"\" > /sys/kernel/debug/tracing/set_event_pid",
-				"echo 1 > /proc/sys/kernel/ftrace_dump_on_oops",
+				oopsCmd,
 				"echo "+fmt.Sprintf("%v", ret.FtraceBufferSize)+" > /sys/kernel/debug/tracing/buffer_size_kb",
 				"cat <(cat /sys/kernel/debug/tracing/available_filter_functions | sort | uniq -u) <(cat "+ret.FtraceFuncList+" | sort | uniq -u) | sort | uniq -d > /sys/kernel/debug/tracing/set_ftrace_filter",
 				"echo function > /sys/kernel/debug/tracing/current_tracer",
