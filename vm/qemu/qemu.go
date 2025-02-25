@@ -734,7 +734,7 @@ func (inst *instance) ExtractKdump(timeout time.Duration, mkdumpfileArgs string)
 		return "", nil, err
 	}
 
-	inst.merger.Add("ssh", stderrRpipe)
+	merger := vmimpl.NewOutputMerger(nil)
 
 	sshArgs := vmimpl.SSHArgsForward(inst.debug, inst.sshkey, inst.port, inst.forwardPort, false)
 	args := []string{"ssh"}
@@ -753,6 +753,7 @@ func (inst *instance) ExtractKdump(timeout time.Duration, mkdumpfileArgs string)
 		return "", nil, err
 	}
 	stderrWpipe.Close()
+	merger.Add("ssh", stderrRpipe)
 	errc := make(chan error, 1)
 	signal := func(err error) {
 		select {
@@ -769,8 +770,9 @@ func (inst *instance) ExtractKdump(timeout time.Duration, mkdumpfileArgs string)
 		case <-inst.diagnose:
 			cmd.Process.Kill()
 			goto retry
-		case err := <-inst.merger.Err:
+		case err := <-merger.Err:
 			cmd.Process.Kill()
+			merger.Wait()
 			cmdErr := cmd.Wait()
 			if cmdErr == nil {
 				// If the command exited successfully, we got EOF error from merger.
@@ -783,6 +785,7 @@ func (inst *instance) ExtractKdump(timeout time.Duration, mkdumpfileArgs string)
 		}
 		dumpFp.Close()
 		cmd.Process.Kill()
+		merger.Wait()
 		cmd.Wait()
 	}()
 	return dumpFp.Name(), errc, nil

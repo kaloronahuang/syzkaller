@@ -434,6 +434,10 @@ func (mon *monitor) waitForOutput() {
 	}
 }
 
+func SetWaitForOutputTimeout(val time.Duration) {
+	waitForOutputTimeout = val
+}
+
 const (
 	maxErrorLength = 256
 
@@ -452,5 +456,5 @@ var (
 	afterContext         = 128 << 10
 
 	tickerPeriod         = 10 * time.Second
-	waitForOutputTimeout = 3 * time.Minute
+	waitForOutputTimeout = 10 * time.Second
 )

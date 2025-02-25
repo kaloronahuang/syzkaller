@@ -181,6 +181,9 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 		optArgs.FtraceFuncList = *flagFtrace
 		optArgs.FtraceBufferSize = *flagFtraceBufferSize
 		optArgs.FtraceDumpOnOops = *flagFtraceDumpOnOops
+		if *flagFtraceDumpOnOops {
+			vm.SetWaitForOutputTimeout(15 * time.Minute)
+		}
 	}
 	if *flagKdump {
 		optArgs.Kdump = *flagKdump
@@ -215,6 +218,14 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 		if !*flagKdump {
 			return res
 		}
+		// ensure the kernel is dead;
+		// kexec -p /var/rescue-kernel.bzImage --append=\"root=/dev/sda1 console=ttyS0 net.ifnames=0\" && echo KEXEC_FINISHED
+		_, errc, err := inst.VMInstance.Run(30*time.Second, nil, "! (test -e /proc/vmcore) && echo 1 > /proc/sys/kernel/sysrq && echo c > /proc/sysrq-trigger")
+		if err != nil {
+			log.Printf("failed to ensure kdump invoked: %v", err)
+		}
+		err = <-errc
+		log.Printf("ensuring kdump invoked or not, receiving: %v", err)
 		kdumpPath, errc, err := inst.VMInstance.ExtractKdump(3*time.Minute, *flagKdumpArgs)
 		if err != nil {
 			log.Printf("failed to extract kdump: %v", err)
