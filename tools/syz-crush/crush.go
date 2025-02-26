@@ -193,6 +193,7 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 		}
 	}
 	if *flagKdump {
+		<-time.After(5 * time.Second)
 		err := inst.VMInstance.SetupKdump(90 * time.Second)
 		if err != nil {
 			log.Printf("failed to setup kdump: %v", err)
