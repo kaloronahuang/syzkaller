@@ -226,6 +226,8 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 		if err != nil {
 			log.Printf("failed to trigger crash: %v", err)
 		}
+		// wait for the machine to reboot;
+		<-time.After(45 * time.Second)
 		kdumpPath, err := inst.VMInstance.ExtractKdump(3*time.Minute, *flagKdumpArgs)
 		if err != nil {
 			log.Printf("failed to extract kdump: %v", err)
