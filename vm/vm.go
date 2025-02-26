@@ -302,7 +302,6 @@ func (inst *Instance) SetupKdump(timeout time.Duration) error {
 }
 
 func (inst *Instance) TriggerCrash(timeout time.Duration) error {
-	println("WTF")
 	triggerCmd := "(! (test -e /proc/vmcore) && echo 1 > /proc/sys/kernel/sysrq && echo c > /proc/sysrq-trigger) || echo \"TRIGGER_FAILED\""
 	merger := vmimpl.NewOutputMerger(nil)
 	sshRpipe, sshWpipe, err := osutil.LongPipe()
@@ -327,8 +326,8 @@ func (inst *Instance) TriggerCrash(timeout time.Duration) error {
 		case outBytes := <-merger.Output:
 			triggerOutput = append(triggerOutput, outBytes...)
 		case <-time.After(timeout):
-			return vmimpl.ErrTimeout
-		case err := <-merger.Err:
+			return nil
+		case <-merger.Err:
 			cmd.Process.Kill()
 			merger.Wait()
 			if cmdErr := cmd.Wait(); cmdErr == nil {
@@ -339,7 +338,7 @@ func (inst *Instance) TriggerCrash(timeout time.Duration) error {
 				}
 				return nil
 			} else {
-				return err
+				return nil
 			}
 		}
 	}
@@ -553,7 +552,6 @@ func (mon *monitor) monitorExecution() *report.Report {
 }
 
 func (mon *monitor) extractError(defaultError string) *report.Report {
-	print("extracting")
 	diagOutput, diagWait := []byte{}, false
 	if defaultError != "" {
 		diagOutput, diagWait = mon.inst.diagnose(mon.createReport(defaultError))
