@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -228,7 +229,8 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 			log.Printf("failed to trigger crash: %v", err)
 		}
 		// wait for the machine to reboot;
-		<-time.After(45 * time.Second)
+		restTime := 45 + rand.Intn(10) - 5
+		<-time.After(time.Duration(restTime) * time.Second)
 		kdumpPath, err := inst.VMInstance.ExtractKdump(3*time.Minute, *flagKdumpArgs)
 		if err != nil {
 			log.Printf("failed to extract kdump: %v", err)

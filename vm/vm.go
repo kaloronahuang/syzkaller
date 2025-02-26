@@ -302,7 +302,7 @@ func (inst *Instance) SetupKdump(timeout time.Duration) error {
 }
 
 func (inst *Instance) TriggerCrash(timeout time.Duration) error {
-	triggerCmd := "(! (test -e /proc/vmcore) && echo 1 > /proc/sys/kernel/sysrq && echo c > /proc/sysrq-trigger) || echo \"TRIGGER_FAILED\""
+	triggerCmd := "! (test -e /proc/vmcore) && ((echo 1 > /proc/sys/kernel/sysrq && echo c > /proc/sysrq-trigger) || echo \"TRIGGER_FAILED\")"
 	merger := vmimpl.NewOutputMerger(nil)
 	sshRpipe, sshWpipe, err := osutil.LongPipe()
 	if err != nil {
@@ -334,7 +334,7 @@ func (inst *Instance) TriggerCrash(timeout time.Duration) error {
 				// If the command exited successfully, we got EOF error from merger.
 				// But in this case no error has happened and the EOF is expected.
 				if bytes.Contains(triggerOutput, []byte("\nTRIGGER_FAILED")) {
-					return fmt.Errorf("no TRIGGER_FAILED")
+					return fmt.Errorf("TRIGGER_FAILED")
 				}
 				return nil
 			} else {
