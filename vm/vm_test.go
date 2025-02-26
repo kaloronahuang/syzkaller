@@ -6,6 +6,8 @@ package vm
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -53,9 +55,8 @@ func (inst *testInstance) Run(timeout time.Duration, stop <-chan bool, command s
 	return inst.outc, inst.errc, nil
 }
 
-func (inst *testInstance) ExtractKdump(timeout time.Duration, mkdumpfileArgs string) (
-	string, <-chan error, error) {
-	return "", nil, fmt.Errorf("not implemented")
+func (inst *testInstance) SSHExecute(timeout time.Duration, command string, stdout io.Writer, stderr io.Writer) (io.WriteCloser, *exec.Cmd, error) {
+	return nil, nil, fmt.Errorf("not implemented")
 }
 
 func (inst *testInstance) Diagnose(rep *report.Report) ([]byte, bool) {

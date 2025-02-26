@@ -4,7 +4,6 @@
 package instance
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"time"
@@ -26,10 +25,6 @@ type OptionalConfig struct {
 	OldFlagsCompatMode bool
 	BeforeContextLen   int
 	StraceBin          string
-	FtraceFuncList     string
-	FtraceBufferSize   int
-	FtraceDumpOnOops   bool
-	Kdump              bool
 }
 
 type ExecProgInstance struct {
@@ -72,59 +67,6 @@ func SetupExecProg(vmInst *vm.Instance, mgrCfg *mgrconfig.Config, reporter *repo
 			ret.StraceBin, err = vmInst.Copy(ret.StraceBin)
 			if err != nil {
 				return nil, &TestError{Title: fmt.Sprintf("failed to copy strace bin: %v", err)}
-			}
-		}
-		if ret.FtraceFuncList != "" {
-			var err error
-			ret.FtraceFuncList, err = vmInst.Copy(ret.FtraceFuncList)
-			if err != nil {
-				return nil, &TestError{Title: fmt.Sprintf("failed to copy ftrace func list: %v", err)}
-			}
-			oopsCmd := "&&"
-			if ret.FtraceDumpOnOops {
-				oopsCmd = "&& echo 1 > /proc/sys/kernel/ftrace_dump_on_oops &&"
-			}
-			ftraceCmd := fmt.Sprintf(
-				"%v && %v && %v && %v %v %v && %v && %v && %v",
-				"test -e /proc/sys/kernel/ftrace_dump_on_oops",
-				"test -e /sys/kernel/debug/tracing/set_ftrace_filter",
-				"echo \"\" > /sys/kernel/debug/tracing/trace",
-				"echo \"\" > /sys/kernel/debug/tracing/set_event_pid",
-				oopsCmd,
-				"echo "+fmt.Sprintf("%v", ret.FtraceBufferSize)+" > /sys/kernel/debug/tracing/buffer_size_kb",
-				"cat <(cat /sys/kernel/debug/tracing/available_filter_functions | sort | uniq -u) <(cat "+ret.FtraceFuncList+" | sort | uniq -u) | sort | uniq -d > /sys/kernel/debug/tracing/set_ftrace_filter",
-				"echo function > /sys/kernel/debug/tracing/current_tracer",
-				"echo 1 > /sys/kernel/debug/tracing/tracing_on")
-			_, errc, err := vmInst.Run(90*time.Second, nil, ftraceCmd)
-			ftraceErr := <-errc
-			if ftraceErr != nil {
-				return nil, &TestError{Title: fmt.Sprintf("failed to setup func list: %v", ftraceErr)}
-			}
-			if err != nil {
-				return nil, &TestError{Title: fmt.Sprintf("failed to setup func list: %v", err)}
-			}
-		}
-		if ret.Kdump {
-			kexecCmd := "kexec -p /var/rescue-kernel.bzImage --append=\"root=/dev/sda1 console=ttyS0 net.ifnames=0\" && echo KEXEC_FINISHED"
-			kexecOutput := []byte{}
-			outc, errc, err := vmInst.Run(30*time.Second, nil, kexecCmd)
-			if err != nil {
-				return nil, &TestError{Title: fmt.Sprintf("failed to setup kdump: %v", err)}
-			}
-			kexecFinished := false
-			for !kexecFinished {
-				select {
-				case outBytes := <-outc:
-					kexecOutput = append(kexecOutput, outBytes...)
-				case kdumpErr := <-errc:
-					if kdumpErr != nil {
-						return nil, &TestError{Title: fmt.Sprintf("failed to setup kdump: %v", kdumpErr)}
-					}
-					kexecFinished = true
-				}
-			}
-			if !bytes.Contains(kexecOutput, []byte("\nKEXEC_FINISHED")) {
-				return nil, &TestError{Title: "failed to setup kdump: kexec error"}
 			}
 		}
 	}

@@ -719,76 +719,27 @@ func (inst *instance) Run(timeout time.Duration, stop <-chan bool, command strin
 	return inst.merger.Output, errc, nil
 }
 
-func (inst *instance) ExtractKdump(timeout time.Duration, mkdumpfileArgs string) (
-	string, <-chan error, error) {
-	mkdumpCmd := fmt.Sprintf("/usr/sbin/makedumpfile -F %v /proc/vmcore", mkdumpfileArgs)
-
-	dumpFp, err := os.CreateTemp("", "kdump-*")
-	if err != nil {
-		return "", nil, err
-	}
-
-	stderrRpipe, stderrWpipe, err := osutil.LongPipe()
-	if err != nil {
-		dumpFp.Close()
-		return "", nil, err
-	}
-
-	merger := vmimpl.NewOutputMerger(nil)
-
+func (inst *instance) SSHExecute(timeout time.Duration, command string, stdout io.Writer, stderr io.Writer) (io.WriteCloser, *exec.Cmd, error) {
 	sshArgs := vmimpl.SSHArgsForward(inst.debug, inst.sshkey, inst.port, inst.forwardPort, false)
 	args := []string{"ssh"}
 	args = append(args, sshArgs...)
-	args = append(args, inst.sshuser+"@localhost", "cd "+inst.targetDir()+" && "+mkdumpCmd)
+	args = append(args, inst.sshuser+"@localhost", "cd "+inst.targetDir()+" && "+command)
 	if inst.debug {
 		log.Logf(0, "running command: %#v", args)
 	}
-	cmd := osutil.Command(args[0], args[1:]...)
-	cmd.Dir = inst.workdir
-	cmd.Stdout = dumpFp
-	cmd.Stderr = stderrWpipe
-	if err := cmd.Start(); err != nil {
-		stderrWpipe.Close()
-		dumpFp.Close()
-		return "", nil, err
+	ssh := osutil.Command(args[0], args[1:]...)
+	ssh.Dir = inst.workdir
+	ssh.Stdout = stdout
+	ssh.Stderr = stderr
+	stdin, err := ssh.StdinPipe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get stdin pipe: %v", err)
 	}
-	stderrWpipe.Close()
-	merger.Add("ssh", stderrRpipe)
-	errc := make(chan error, 1)
-	signal := func(err error) {
-		select {
-		case errc <- err:
-		default:
-		}
+	if err := ssh.Start(); err != nil {
+		stdin.Close()
+		return nil, nil, fmt.Errorf("failed to connect to instance: %w", err)
 	}
-
-	go func() {
-	retry:
-		select {
-		case <-time.After(timeout):
-			signal(vmimpl.ErrTimeout)
-		case <-inst.diagnose:
-			cmd.Process.Kill()
-			goto retry
-		case err := <-merger.Err:
-			cmd.Process.Kill()
-			merger.Wait()
-			cmdErr := cmd.Wait()
-			if cmdErr == nil {
-				// If the command exited successfully, we got EOF error from merger.
-				// But in this case no error has happened and the EOF is expected.
-				err = nil
-			}
-			signal(err)
-			dumpFp.Close()
-			return
-		}
-		dumpFp.Close()
-		cmd.Process.Kill()
-		merger.Wait()
-		cmd.Wait()
-	}()
-	return dumpFp.Name(), errc, nil
+	return stdin, ssh, nil
 }
 
 func (inst *instance) Info() ([]byte, error) {

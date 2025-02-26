@@ -48,8 +48,8 @@ type Instance interface {
 	// Command is terminated after timeout. Send on the stop chan can be used to terminate it earlier.
 	Run(timeout time.Duration, stop <-chan bool, command string) (outc <-chan []byte, errc <-chan error, err error)
 
-	// Extract Kdump into a temp file and return the path
-	ExtractKdump(timeout time.Duration, mkdumpfileArgs string) (dumpPath string, errc <-chan error, err error)
+	// SSH Execute command in a flexible way.
+	SSHExecute(timeout time.Duration, command string, stdout io.Writer, stderr io.Writer) (io.WriteCloser, *exec.Cmd, error)
 
 	// Diagnose retrieves additional debugging info from the VM
 	// (e.g. by sending some sys-rq's or SIGABORT'ing a Go program).

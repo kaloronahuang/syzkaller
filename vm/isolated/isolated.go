@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -360,9 +361,8 @@ func (inst *instance) Run(timeout time.Duration, stop <-chan bool, command strin
 	return vmimpl.Multiplex(cmd, merger, dmesg, timeout, stop, inst.closed, inst.debug)
 }
 
-func (inst *instance) ExtractKdump(timeout time.Duration, mkdumpfileArgs string) (
-	string, <-chan error, error) {
-	return "", nil, fmt.Errorf("not implemented")
+func (inst *instance) SSHExecute(timeout time.Duration, command string, stdout io.Writer, stderr io.Writer) (io.WriteCloser, *exec.Cmd, error) {
+	return nil, nil, fmt.Errorf("not implemented")
 }
 
 func (inst *instance) readPstoreContents() ([]byte, error) {
