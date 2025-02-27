@@ -163,9 +163,13 @@ func storeCrash(cfg *mgrconfig.Config, res *instance.RunResult) {
 	if err := osutil.CopyFile(flag.Args()[0], filepath.Join(dir, fmt.Sprintf("reproducer%v", index))); err != nil {
 		log.Printf("failed to write crash reproducer: %v", err)
 	}
-
-	if err := osutil.CopyFile(rep.KdumpPath, filepath.Join(dir, fmt.Sprintf("kdump%v", index))); err != nil {
-		log.Printf("failed to write crash core dump: %v", err)
+	if rep.KdumpPath != "" {
+		if err := osutil.CopyFile(rep.KdumpPath, filepath.Join(dir, fmt.Sprintf("kdump%v", index))); err != nil {
+			log.Printf("failed to write crash core dump: %v", err)
+		}
+		if err := os.Remove(rep.KdumpPath); err != nil {
+			log.Printf("failed to remove temporary kdump: %v", err)
+		}
 	}
 }
 
@@ -185,6 +189,7 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 		return nil
 	}
 	if *flagFtrace != "" {
+		<-time.After(5 * time.Second)
 		if *flagFtraceDumpOnOops {
 			vm.SetWaitForOutputTimeout(15 * time.Minute)
 		}
@@ -193,11 +198,14 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 			log.Printf("failed to setup ftrace: %v", err)
 		}
 	}
+	kdumpSetup := false
 	if *flagKdump {
 		<-time.After(5 * time.Second)
 		err := inst.VMInstance.SetupKdump(90 * time.Second)
 		if err != nil {
 			log.Printf("failed to setup kdump: %v", err)
+		} else {
+			kdumpSetup = true
 		}
 	}
 	defer inst.VMInstance.Close()
@@ -221,7 +229,7 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 	}
 	if res.Report != nil {
 		log.Printf("vm-%v: crash: %v", index, res.Report.Title)
-		if !*flagKdump {
+		if !(*flagKdump && kdumpSetup) {
 			return res
 		}
 		err := inst.VMInstance.TriggerCrash(10 * time.Second)
@@ -229,8 +237,7 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 			log.Printf("failed to trigger crash: %v", err)
 		}
 		// wait for the machine to reboot;
-		restTime := 45 + rand.Intn(10) - 5
-		<-time.After(time.Duration(restTime) * time.Second)
+		<-time.After(time.Duration(45+rand.Intn(10)-5) * time.Second)
 		kdumpPath, err := inst.VMInstance.ExtractKdump(3*time.Minute, *flagKdumpArgs)
 		if err != nil {
 			log.Printf("failed to extract kdump: %v", err)
