@@ -437,6 +437,10 @@ func (inst *instance) Run(timeout time.Duration, stop <-chan bool, command strin
 	})
 }
 
+func (inst *instance) SSHExecute(timeout time.Duration, command string, stdout io.Writer, stderr io.Writer) (io.WriteCloser, *exec.Cmd, error) {
+	return nil, nil, fmt.Errorf("not implemented")
+}
+
 func (inst *instance) Info() ([]byte, error) {
 	info := fmt.Sprintf("%v\n%v", inst.version, "ffx")
 	return []byte(info), nil

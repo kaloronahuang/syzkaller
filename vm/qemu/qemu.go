@@ -713,6 +713,29 @@ func (inst *instance) Run(timeout time.Duration, stop <-chan bool, command strin
 	})
 }
 
+func (inst *instance) SSHExecute(timeout time.Duration, command string, stdout io.Writer, stderr io.Writer) (io.WriteCloser, *exec.Cmd, error) {
+	sshArgs := vmimpl.SSHArgsForward(inst.debug, inst.sshkey, inst.port, inst.forwardPort, false)
+	args := []string{"ssh"}
+	args = append(args, sshArgs...)
+	args = append(args, inst.sshuser+"@localhost", "cd "+inst.targetDir()+" && "+command)
+	if inst.debug {
+		log.Logf(0, "running command: %#v", args)
+	}
+	ssh := osutil.Command(args[0], args[1:]...)
+	ssh.Dir = inst.workdir
+	ssh.Stdout = stdout
+	ssh.Stderr = stderr
+	stdin, err := ssh.StdinPipe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get stdin pipe: %v", err)
+	}
+	if err := ssh.Start(); err != nil {
+		stdin.Close()
+		return nil, nil, fmt.Errorf("failed to connect to instance: %w", err)
+	}
+	return stdin, ssh, nil
+}
+
 func (inst *instance) Info() ([]byte, error) {
 	info := fmt.Sprintf("%v\n%v %q\n", inst.version, inst.cfg.Qemu, inst.args)
 	return []byte(info), nil

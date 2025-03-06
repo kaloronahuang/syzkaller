@@ -16,6 +16,7 @@ import (
 	"net/rpc"
 	"net/rpc/jsonrpc"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -543,6 +544,10 @@ func (inst *instance) Run(
 		}
 	}()
 	return outc, terminationError, nil
+}
+
+func (inst *instance) SSHExecute(timeout time.Duration, command string, stdout io.Writer, stderr io.Writer) (io.WriteCloser, *exec.Cmd, error) {
+	return nil, nil, fmt.Errorf("not implemented")
 }
 
 func (inst *instance) runStop(runID string) {

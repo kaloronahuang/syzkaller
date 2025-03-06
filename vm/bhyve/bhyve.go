@@ -381,6 +381,10 @@ func (inst *instance) Run(timeout time.Duration, stop <-chan bool, command strin
 	return inst.merger.Output, errc, nil
 }
 
+func (inst *instance) SSHExecute(timeout time.Duration, command string, stdout io.Writer, stderr io.Writer) (io.WriteCloser, *exec.Cmd, error) {
+	return nil, nil, fmt.Errorf("not implemented")
+}
+
 func (inst *instance) Diagnose(rep *report.Report) ([]byte, bool) {
 	return vmimpl.DiagnoseFreeBSD(inst.consolew)
 }

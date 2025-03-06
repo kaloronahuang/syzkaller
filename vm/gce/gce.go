@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -361,6 +362,21 @@ func (inst *instance) Run(timeout time.Duration, stop <-chan bool, command strin
 			return false
 		},
 	})
+}
+
+func (inst *instance) SSHExecute(timeout time.Duration, command string, stdout io.Writer, stderr io.Writer) (io.WriteCloser, *exec.Cmd, error) {
+	ssh := osutil.Command("ssh", inst.sshArgs(command)...)
+	ssh.Stdout = stdout
+	ssh.Stderr = stderr
+	stdin, err := ssh.StdinPipe()
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to get stdin pipe: %v", err)
+	}
+	if err := ssh.Start(); err != nil {
+		stdin.Close()
+		return nil, nil, fmt.Errorf("failed to connect to instance: %w", err)
+	}
+	return stdin, ssh, nil
 }
 
 func waitForConsoleConnect(merger *vmimpl.OutputMerger) error {

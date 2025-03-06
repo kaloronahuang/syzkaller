@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -312,6 +313,202 @@ func (inst *Instance) Run(timeout time.Duration, reporter *report.Reporter, comm
 	}
 	rep := mon.monitorExecution()
 	return mon.output, rep, nil
+}
+
+func (inst *Instance) SSHExecute(timeout time.Duration, command string, stdout io.Writer, stderr io.Writer) (io.WriteCloser, *exec.Cmd, error) {
+	return inst.impl.SSHExecute(timeout, command, stdout, stderr)
+}
+
+func (inst *Instance) SetupFtrace(timeout time.Duration, dumpOnOops bool, ftraceFuncListPath string, ftraceBufferSize int) error {
+	remoteListPath, err := inst.Copy(ftraceFuncListPath)
+	if err != nil {
+		return err
+	}
+
+	oopsCmd := "&&"
+	if dumpOnOops {
+		oopsCmd = "&& echo 1 > /proc/sys/kernel/ftrace_dump_on_oops &&"
+	}
+	ftraceCmd := fmt.Sprintf(
+		"%v && %v && %v && %v %v %v && %v && %v && %v && %v",
+		"test -e /proc/sys/kernel/ftrace_dump_on_oops",
+		"test -e /sys/kernel/debug/tracing/set_ftrace_filter",
+		"echo \"\" > /sys/kernel/debug/tracing/trace",
+		"echo \"\" > /sys/kernel/debug/tracing/set_event_pid",
+		oopsCmd,
+		"echo "+fmt.Sprintf("%v", ftraceBufferSize)+" > /sys/kernel/debug/tracing/buffer_size_kb",
+		"cat <(cat /sys/kernel/debug/tracing/available_filter_functions | sort | uniq -u) <(cat "+remoteListPath+" | sort | uniq -u) | sort | uniq -d > /sys/kernel/debug/tracing/set_ftrace_filter",
+		"echo function > /sys/kernel/debug/tracing/current_tracer",
+		"echo 1 > /sys/kernel/debug/tracing/tracing_on",
+		"echo FTRACE_SETUP_SUCCESS")
+	merger := vmimpl.NewOutputMerger(nil)
+	sshRpipe, sshWpipe, err := osutil.LongPipe()
+	if err != nil {
+		merger.Wait()
+		return err
+	}
+	stdin, cmd, err := inst.SSHExecute(timeout, ftraceCmd, sshWpipe, sshWpipe)
+	if err != nil {
+		merger.Wait()
+		return err
+	}
+
+	merger.Add("ssh", sshRpipe)
+	stdin.Close()
+	sshWpipe.Close()
+
+	ftraceOutput := []byte{}
+
+	for {
+		select {
+		case outBytes := <-merger.Output:
+			ftraceOutput = append(ftraceOutput, outBytes...)
+		case <-time.After(timeout):
+			return vmimpl.ErrTimeout
+		case err := <-merger.Err:
+			cmd.Process.Kill()
+			merger.Wait()
+			if cmdErr := cmd.Wait(); cmdErr == nil {
+				// If the command exited successfully, we got EOF error from merger.
+				// But in this case no error has happened and the EOF is expected.
+				if !bytes.Contains(ftraceOutput, []byte("\nFTRACE_SETUP_SUCCESS")) {
+					return fmt.Errorf("no FTRACE_SETUP_SUCCESS")
+				}
+				return nil
+			} else {
+				return err
+			}
+		}
+	}
+}
+
+func (inst *Instance) SetupKdump(timeout time.Duration) error {
+	kexecCmd := "kexec -p /var/rescue-kernel.bzImage --append=\"root=/dev/sda1 console=ttyS0 net.ifnames=0\" && echo KEXEC_SUCCESS"
+	merger := vmimpl.NewOutputMerger(nil)
+	sshRpipe, sshWpipe, err := osutil.LongPipe()
+	if err != nil {
+		merger.Wait()
+		return err
+	}
+	stdin, cmd, err := inst.SSHExecute(timeout, kexecCmd, sshWpipe, sshWpipe)
+	if err != nil {
+		merger.Wait()
+		return err
+	}
+
+	merger.Add("ssh", sshRpipe)
+	stdin.Close()
+	sshWpipe.Close()
+
+	kexecOutput := []byte{}
+
+	for {
+		select {
+		case outBytes := <-merger.Output:
+			kexecOutput = append(kexecOutput, outBytes...)
+		case <-time.After(timeout):
+			return vmimpl.ErrTimeout
+		case err := <-merger.Err:
+			cmd.Process.Kill()
+			merger.Wait()
+			if cmdErr := cmd.Wait(); cmdErr == nil {
+				// If the command exited successfully, we got EOF error from merger.
+				// But in this case no error has happened and the EOF is expected.
+				if !bytes.Contains(kexecOutput, []byte("\nKEXEC_SUCCESS")) {
+					return fmt.Errorf("no KEXEC_SUCCESS")
+				}
+				return nil
+			} else {
+				return err
+			}
+		}
+	}
+}
+
+func (inst *Instance) TriggerCrash(timeout time.Duration) error {
+	triggerCmd := "! (test -e /proc/vmcore) && ((echo 1 > /proc/sys/kernel/sysrq && echo c > /proc/sysrq-trigger) || echo \"TRIGGER_FAILED\")"
+	merger := vmimpl.NewOutputMerger(nil)
+	sshRpipe, sshWpipe, err := osutil.LongPipe()
+	if err != nil {
+		merger.Wait()
+		return err
+	}
+	stdin, cmd, err := inst.SSHExecute(timeout, triggerCmd, sshWpipe, sshWpipe)
+	if err != nil {
+		merger.Wait()
+		return err
+	}
+
+	merger.Add("ssh", sshRpipe)
+	stdin.Close()
+	sshWpipe.Close()
+
+	triggerOutput := []byte{}
+
+	for {
+		select {
+		case outBytes := <-merger.Output:
+			triggerOutput = append(triggerOutput, outBytes...)
+		case <-time.After(timeout):
+			return nil
+		case <-merger.Err:
+			cmd.Process.Kill()
+			merger.Wait()
+			if cmdErr := cmd.Wait(); cmdErr == nil {
+				// If the command exited successfully, we got EOF error from merger.
+				// But in this case no error has happened and the EOF is expected.
+				if bytes.Contains(triggerOutput, []byte("\nTRIGGER_FAILED")) {
+					return fmt.Errorf("TRIGGER_FAILED")
+				}
+				return nil
+			} else {
+				return nil
+			}
+		}
+	}
+}
+
+func (inst *Instance) ExtractKdump(timeout time.Duration, mkdumpfileArgs string) (string, error) {
+	mkdumpCmd := fmt.Sprintf("/usr/sbin/makedumpfile -F %v /proc/vmcore", mkdumpfileArgs)
+	dumpFp, err := os.CreateTemp("", "kdump-*")
+	dumpFname := dumpFp.Name()
+	if err != nil {
+		return "", err
+	}
+
+	merger := vmimpl.NewOutputMerger(nil)
+	sshRpipe, sshWpipe, err := osutil.LongPipe()
+	if err != nil {
+		merger.Wait()
+		dumpFp.Close()
+		return "", err
+	}
+	stdin, cmd, err := inst.SSHExecute(timeout, mkdumpCmd, dumpFp, sshWpipe)
+	if err != nil {
+		merger.Wait()
+		dumpFp.Close()
+		return "", err
+	}
+
+	merger.Add("ssh", sshRpipe)
+	stdin.Close()
+	sshWpipe.Close()
+
+	select {
+	case <-time.After(timeout):
+		return "", vmimpl.ErrTimeout
+	case err := <-merger.Err:
+		cmd.Process.Kill()
+		merger.Wait()
+		dumpFp.Close()
+		if cmdErr := cmd.Wait(); cmdErr == nil {
+			// If the command exited successfully, we got EOF error from merger.
+			// But in this case no error has happened and the EOF is expected.
+			return dumpFname, nil
+		} else {
+			return "", err
+		}
+	}
 }
 
 func (inst *Instance) Info() ([]byte, error) {

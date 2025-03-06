@@ -25,14 +25,20 @@ import (
 	"github.com/google/syzkaller/pkg/osutil"
 	"github.com/google/syzkaller/pkg/report"
 	"github.com/google/syzkaller/vm"
+	"golang.org/x/exp/rand"
 )
 
 var (
-	flagConfig      = flag.String("config", "", "manager configuration file")
-	flagDebug       = flag.Bool("debug", false, "dump all VM output to console")
-	flagRestartTime = flag.Duration("restart_time", 0, "how long to run the test")
-	flagInfinite    = flag.Bool("infinite", true, "by default test is run for ever, -infinite=false to stop on crash")
-	flagStrace      = flag.Bool("strace", false, "run under strace (binary must be set in the config file")
+	flagConfig           = flag.String("config", "", "manager configuration file")
+	flagDebug            = flag.Bool("debug", false, "dump all VM output to console")
+	flagRestartTime      = flag.Duration("restart_time", 0, "how long to run the test")
+	flagInfinite         = flag.Bool("infinite", true, "by default test is run for ever, -infinite=false to stop on crash")
+	flagStrace           = flag.Bool("strace", false, "run under strace (binary must be set in the config file")
+	flagFtrace           = flag.String("ftrace", "", "ftrace function list file")
+	flagFtraceBufferSize = flag.Int("ftrace_bufsiz", 204800, "buffer size in kb")
+	flagFtraceDumpOnOops = flag.Bool("ftrace_dump_on_oops", false, "if dump_on_oops is set")
+	flagKdump            = flag.Bool("kdump", false, "capture kdump when crashing")
+	flagKdumpArgs        = flag.String("kdump_args", "-c -d 17", "makedumpfile arguments")
 )
 
 type FileType int
@@ -158,6 +164,14 @@ func storeCrash(cfg *mgrconfig.Config, res *instance.RunResult) {
 	if err := osutil.CopyFile(flag.Args()[0], filepath.Join(dir, fmt.Sprintf("reproducer%v", index))); err != nil {
 		log.Printf("failed to write crash reproducer: %v", err)
 	}
+	if rep.KdumpPath != "" {
+		if err := osutil.CopyFile(rep.KdumpPath, filepath.Join(dir, fmt.Sprintf("kdump%v", index))); err != nil {
+			log.Printf("failed to write crash kdump: %v", err)
+		}
+		if err := os.Remove(rep.KdumpPath); err != nil {
+			log.Printf("failed to remove temporary kdump: %v", err)
+		}
+	}
 }
 
 func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
@@ -174,6 +188,26 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 		return nil
 	}
 	defer inst.VMInstance.Close()
+	if *flagFtrace != "" {
+		<-time.After(5 * time.Second)
+		if *flagFtraceDumpOnOops {
+			// vm.SetWaitForOutputTimeout(15 * time.Minute)
+		}
+		err := inst.VMInstance.SetupFtrace(90*time.Second, *flagFtraceDumpOnOops, *flagFtrace, *flagFtraceBufferSize)
+		if err != nil {
+			log.Printf("failed to setup ftrace: %v", err)
+		}
+	}
+	kdumpSetup := false
+	if *flagKdump {
+		<-time.After(5 * time.Second)
+		err := inst.VMInstance.SetupKdump(90 * time.Second)
+		if err != nil {
+			log.Printf("failed to setup kdump: %v", err)
+		} else {
+			kdumpSetup = true
+		}
+	}
 	file := flag.Args()[0]
 	var res *instance.RunResult
 	if runType == LogFile {
@@ -194,6 +228,21 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 	}
 	if res.Report != nil {
 		log.Printf("vm-%v: crash: %v", index, res.Report.Title)
+		if !(*flagKdump && kdumpSetup) {
+			return res
+		}
+		err := inst.VMInstance.TriggerCrash(10 * time.Second)
+		if err != nil {
+			log.Printf("failed to trigger crash: %v", err)
+		}
+		// wait for the machine to reboot;
+		<-time.After(time.Duration(45+rand.Intn(10)-5) * time.Second)
+		kdumpPath, err := inst.VMInstance.ExtractKdump(3*time.Minute, *flagKdumpArgs)
+		if err != nil {
+			log.Printf("failed to extract kdump: %v", err)
+			return res
+		}
+		res.Report.KdumpPath = kdumpPath
 		return res
 	}
 	log.Printf("vm-%v: running long enough, stopping", index)
