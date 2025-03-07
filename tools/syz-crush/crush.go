@@ -25,7 +25,6 @@ import (
 	"github.com/google/syzkaller/pkg/osutil"
 	"github.com/google/syzkaller/pkg/report"
 	"github.com/google/syzkaller/vm"
-	"golang.org/x/exp/rand"
 )
 
 var (
@@ -235,8 +234,6 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 		if err != nil {
 			log.Printf("failed to trigger crash: %v", err)
 		}
-		// wait for the machine to reboot;
-		<-time.After(time.Duration(45+rand.Intn(10)-5) * time.Second)
 		kdumpPath, err := inst.VMInstance.ExtractKdump(3*time.Minute, *flagKdumpArgs)
 		if err != nil {
 			log.Printf("failed to extract kdump: %v", err)
