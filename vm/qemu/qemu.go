@@ -714,7 +714,7 @@ func (inst *instance) Run(timeout time.Duration, stop <-chan bool, command strin
 }
 
 func (inst *instance) SSHExecute(timeout time.Duration, command string, stdout io.Writer, stderr io.Writer) (io.WriteCloser, *exec.Cmd, error) {
-	sshArgs := []string{"-o", "ConnectTimeout=5", "-o", "ConnectionAttempts=20"}
+	sshArgs := []string{"-v", "-o", "ConnectTimeout=5", "-o", "ConnectionAttempts=20"}
 	sshArgs = append(sshArgs, vmimpl.SSHArgsForward(inst.debug, inst.sshkey, inst.port, inst.forwardPort, false)...)
 	args := []string{"ssh"}
 	args = append(args, sshArgs...)
