@@ -383,7 +383,7 @@ func (inst *Instance) SetupFtrace(timeout time.Duration, dumpOnOops bool, ftrace
 }
 
 func (inst *Instance) SetupKdump(timeout time.Duration) error {
-	kexecCmd := "kexec -p /var/rescue-kernel.bzImage --append=\"root=/dev/sda1 console=ttyS0 net.ifnames=0\" && echo KEXEC_SUCCESS"
+	kexecCmd := "kexec -p /var/rescue-kernel.bzImage --append=\"root=/dev/sda1 console=ttyS0 net.ifnames=0 irqpoll nr_cpus=1 reset_devices\" && echo KEXEC_SUCCESS"
 	merger := vmimpl.NewOutputMerger(nil)
 	sshRpipe, sshWpipe, err := osutil.LongPipe()
 	if err != nil {
