@@ -382,7 +382,9 @@ func (inst *instance) Run(timeout time.Duration, stop <-chan bool, command strin
 }
 
 func (inst *instance) SSHExecute(timeout time.Duration, command string, stdout io.Writer, stderr io.Writer) (io.WriteCloser, *exec.Cmd, error) {
-	ssh := osutil.Command("ssh", inst.sshArgs(command)...)
+	args := []string{"-v", "-o", "ConnectTimeout=10", "-o", "ConnectionAttempts=20"}
+	args = append(args, inst.sshArgs(command)...)
+	ssh := osutil.Command("ssh", args...)
 	ssh.Stdout = stdout
 	ssh.Stderr = stderr
 	stdin, err := ssh.StdinPipe()

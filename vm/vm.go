@@ -370,19 +370,31 @@ func (inst *Instance) ExtractKdump(timeout time.Duration, mkdumpfileArgs string)
 	stdin.Close()
 	sshWpipe.Close()
 
-	select {
-	case <-time.After(timeout):
-		return "", vmimpl.ErrTimeout
-	case err := <-merger.Err:
-		cmd.Process.Kill()
-		merger.Wait()
-		dumpFp.Close()
-		if cmdErr := cmd.Wait(); cmdErr == nil {
-			// If the command exited successfully, we got EOF error from merger.
-			// But in this case no error has happened and the EOF is expected.
-			return dumpFname, nil
-		} else {
-			return "", err
+	debugLog := []byte{}
+
+	for {
+		select {
+		case stderrBytes := <-merger.Output:
+			debugLog = append(debugLog, stderrBytes...)
+		case <-time.After(timeout):
+			fmt.Println("SSH output for debugging:")
+			os.Stdout.Write(debugLog)
+			fmt.Println("")
+			return "", vmimpl.ErrTimeout
+		case err := <-merger.Err:
+			cmd.Process.Kill()
+			merger.Wait()
+			dumpFp.Close()
+			if cmdErr := cmd.Wait(); cmdErr == nil {
+				// If the command exited successfully, we got EOF error from merger.
+				// But in this case no error has happened and the EOF is expected.
+				return dumpFname, nil
+			} else {
+				fmt.Println("SSH output for debugging:")
+				os.Stdout.Write(debugLog)
+				fmt.Println("")
+				return "", err
+			}
 		}
 	}
 }
