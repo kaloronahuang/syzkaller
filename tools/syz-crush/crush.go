@@ -38,6 +38,7 @@ var (
 	flagFtraceDumpOnOops = flag.Bool("ftrace_dump_on_oops", false, "if dump_on_oops is set")
 	flagKdump            = flag.Bool("kdump", false, "capture kdump when crashing")
 	flagKdumpArgs        = flag.String("kdump_args", "-c -d 17", "makedumpfile arguments")
+	flagThreaded         = flag.Bool("threaded", true, "threaded or not for syz reproducer")
 )
 
 type FileType int
@@ -211,7 +212,10 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 	var res *instance.RunResult
 	if runType == LogFile {
 		opts := csource.DefaultOpts(cfg)
-		opts.Repeat, opts.Threaded = true, true
+		opts.Repeat, opts.Threaded = true, *flagThreaded
+		if !*flagThreaded {
+			log.Println("threading disabled")
+		}
 		res, err = inst.RunSyzProgFile(file, timeout, opts, instance.SyzExitConditions)
 	} else {
 		var src []byte
