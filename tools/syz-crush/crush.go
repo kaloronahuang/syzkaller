@@ -34,6 +34,7 @@ var (
 	flagInfinite         = flag.Bool("infinite", true, "by default test is run for ever, -infinite=false to stop on crash")
 	flagStrace           = flag.Bool("strace", false, "run under strace (binary must be set in the config file")
 	flagFtrace           = flag.String("ftrace", "", "ftrace function list file")
+	flagTracePrintkOnly  = flag.Bool("trace_printk_only", true, "trace_printk only")
 	flagFtraceBufferSize = flag.Int("ftrace_bufsiz", 204800, "buffer size in kb")
 	flagFtraceDumpOnOops = flag.Bool("ftrace_dump_on_oops", false, "if dump_on_oops is set")
 	flagKdump            = flag.Bool("kdump", false, "capture kdump when crashing")
@@ -193,7 +194,7 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 		if *flagFtraceDumpOnOops {
 			// vm.SetWaitForOutputTimeout(15 * time.Minute)
 		}
-		err := inst.VMInstance.SetupFtrace(90*time.Second, *flagFtraceDumpOnOops, *flagFtrace, *flagFtraceBufferSize)
+		err := inst.VMInstance.SetupFtrace(90*time.Second, *flagFtraceDumpOnOops, *flagFtrace, *flagFtraceBufferSize, *flagTracePrintkOnly)
 		if err != nil {
 			log.Printf("failed to setup ftrace: %v", err)
 		}
@@ -238,6 +239,7 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 		if err != nil {
 			log.Printf("failed to trigger crash: %v", err)
 		}
+		<-time.After(1 * time.Minute)
 		kdumpPath, err := inst.VMInstance.ExtractKdump(6*time.Minute, *flagKdumpArgs)
 		if err != nil {
 			log.Printf("failed to extract kdump: %v", err)

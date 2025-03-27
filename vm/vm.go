@@ -319,28 +319,42 @@ func (inst *Instance) SSHExecute(timeout time.Duration, command string, stdout i
 	return inst.impl.SSHExecute(timeout, command, stdout, stderr)
 }
 
-func (inst *Instance) SetupFtrace(timeout time.Duration, dumpOnOops bool, ftraceFuncListPath string, ftraceBufferSize int) error {
-	remoteListPath, err := inst.Copy(ftraceFuncListPath)
-	if err != nil {
-		return err
-	}
-
+func (inst *Instance) SetupFtrace(timeout time.Duration, dumpOnOops bool, ftraceFuncListPath string, ftraceBufferSize int, tracePrintkOnly bool) error {
 	oopsCmd := "&&"
 	if dumpOnOops {
 		oopsCmd = "&& echo 1 > /proc/sys/kernel/ftrace_dump_on_oops &&"
 	}
-	ftraceCmd := fmt.Sprintf(
-		"%v && %v && %v && %v %v %v && %v && %v && %v && %v",
-		"test -e /proc/sys/kernel/ftrace_dump_on_oops",
-		"test -e /sys/kernel/debug/tracing/set_ftrace_filter",
-		"echo \"\" > /sys/kernel/debug/tracing/trace",
-		"echo \"\" > /sys/kernel/debug/tracing/set_event_pid",
-		oopsCmd,
-		"echo "+fmt.Sprintf("%v", ftraceBufferSize)+" > /sys/kernel/debug/tracing/buffer_size_kb",
-		"cat <(cat /sys/kernel/debug/tracing/available_filter_functions | sort | uniq -u) <(cat "+remoteListPath+" | sort | uniq -u) | sort | uniq -d > /sys/kernel/debug/tracing/set_ftrace_filter",
-		"echo function > /sys/kernel/debug/tracing/current_tracer",
-		"echo 1 > /sys/kernel/debug/tracing/tracing_on",
-		"echo FTRACE_SETUP_SUCCESS")
+	ftraceCmd := ""
+	if tracePrintkOnly {
+		ftraceCmd = fmt.Sprintf(
+			"%v && %v && %v && %v %v %v && %v && %v && %v",
+			"test -e /proc/sys/kernel/ftrace_dump_on_oops",
+			"test -e /sys/kernel/debug/tracing/set_ftrace_filter",
+			"echo \"\" > /sys/kernel/debug/tracing/trace",
+			"echo \"\" > /sys/kernel/debug/tracing/set_event_pid",
+			oopsCmd,
+			"echo "+fmt.Sprintf("%v", ftraceBufferSize)+" > /sys/kernel/debug/tracing/buffer_size_kb",
+			"echo nop > /sys/kernel/debug/tracing/current_tracer",
+			"echo 1 > /sys/kernel/debug/tracing/tracing_on",
+			"echo FTRACE_SETUP_SUCCESS")
+	} else {
+		remoteListPath, err := inst.Copy(ftraceFuncListPath)
+		if err != nil {
+			return err
+		}
+		ftraceCmd = fmt.Sprintf(
+			"%v && %v && %v && %v %v %v && %v && %v && %v && %v",
+			"test -e /proc/sys/kernel/ftrace_dump_on_oops",
+			"test -e /sys/kernel/debug/tracing/set_ftrace_filter",
+			"echo \"\" > /sys/kernel/debug/tracing/trace",
+			"echo \"\" > /sys/kernel/debug/tracing/set_event_pid",
+			oopsCmd,
+			"echo "+fmt.Sprintf("%v", ftraceBufferSize)+" > /sys/kernel/debug/tracing/buffer_size_kb",
+			"cat <(cat /sys/kernel/debug/tracing/available_filter_functions | sort | uniq -u) <(cat "+remoteListPath+" | sort | uniq -u) | sort | uniq -d > /sys/kernel/debug/tracing/set_ftrace_filter",
+			"echo function > /sys/kernel/debug/tracing/current_tracer",
+			"echo 1 > /sys/kernel/debug/tracing/tracing_on",
+			"echo FTRACE_SETUP_SUCCESS")
+	}
 	merger := vmimpl.NewOutputMerger(nil)
 	sshRpipe, sshWpipe, err := osutil.LongPipe()
 	if err != nil {
