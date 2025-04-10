@@ -327,9 +327,8 @@ func (inst *Instance) SetupFtrace(timeout time.Duration, dumpOnOops bool, ftrace
 	ftraceCmd := ""
 	if tracePrintkOnly {
 		ftraceCmd = fmt.Sprintf(
-			"%v && %v && %v && %v %v %v && %v && %v && %v",
-			"test -e /proc/sys/kernel/ftrace_dump_on_oops",
-			"test -e /sys/kernel/debug/tracing/set_ftrace_filter",
+			"%v && %v && %v %v %v && %v && %v && %v",
+			"test -e /sys/kernel/debug/tracing/trace",
 			"echo \"\" > /sys/kernel/debug/tracing/trace",
 			"echo \"\" > /sys/kernel/debug/tracing/set_event_pid",
 			oopsCmd,
