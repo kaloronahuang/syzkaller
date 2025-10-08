@@ -240,12 +240,19 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 			log.Printf("failed to trigger crash: %v", err)
 		}
 		<-time.After(1 * time.Minute)
-		kdumpPath, err := inst.VMInstance.ExtractKdump(6*time.Minute, *flagKdumpArgs)
-		if err != nil {
-			log.Printf("failed to extract kdump: %v", err)
-			return res
+		maxAttempt := 10
+		for attempts := 0; attempts < maxAttempt; attempts++ {
+			kdumpPath, err := inst.VMInstance.ExtractKdump(3*time.Minute, *flagKdumpArgs)
+			if err != nil {
+				if attempts < maxAttempt-1 {
+					continue
+				}
+				log.Printf("failed to extract kdump: %v", err)
+				return res
+			}
+			res.Report.KdumpPath = kdumpPath
+			break
 		}
-		res.Report.KdumpPath = kdumpPath
 		return res
 	}
 	log.Printf("vm-%v: running long enough, stopping", index)

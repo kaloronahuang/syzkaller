@@ -494,12 +494,14 @@ func (inst *Instance) ExtractKdump(timeout time.Duration, mkdumpfileArgs string)
 	if err != nil {
 		merger.Wait()
 		dumpFp.Close()
+		os.Remove(dumpFname)
 		return "", err
 	}
 	stdin, cmd, err := inst.SSHExecute(timeout, mkdumpCmd, dumpFp, sshWpipe)
 	if err != nil {
 		merger.Wait()
 		dumpFp.Close()
+		os.Remove(dumpFname)
 		return "", err
 	}
 
@@ -514,9 +516,10 @@ func (inst *Instance) ExtractKdump(timeout time.Duration, mkdumpfileArgs string)
 		case stderrBytes := <-merger.Output:
 			debugLog = append(debugLog, stderrBytes...)
 		case <-time.After(timeout):
-			fmt.Println("SSH output for debugging:")
+			fmt.Println("Timed out, SSH output for debugging:")
 			os.Stdout.Write(debugLog)
 			fmt.Println("")
+			os.Remove(dumpFname)
 			return "", vmimpl.ErrTimeout
 		case err := <-merger.Err:
 			cmd.Process.Kill()
@@ -527,9 +530,10 @@ func (inst *Instance) ExtractKdump(timeout time.Duration, mkdumpfileArgs string)
 				// But in this case no error has happened and the EOF is expected.
 				return dumpFname, nil
 			} else {
-				fmt.Println("SSH output for debugging:")
+				fmt.Println("Stderr terminated, SSH output for debugging:")
 				os.Stdout.Write(debugLog)
 				fmt.Println("")
+				os.Remove(dumpFname)
 				return "", err
 			}
 		}
