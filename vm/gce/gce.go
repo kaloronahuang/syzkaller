@@ -15,6 +15,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -43,8 +44,10 @@ type Config struct {
 	Count         int    `json:"count"`          // number of VMs to use
 	ZoneID        string `json:"zone_id"`        // GCE zone (if it's different from that of syz-manager)
 	MachineType   string `json:"machine_type"`   // GCE machine type (e.g. "n1-highcpu-2")
-	GCSPath       string `json:"gcs_path"`       // GCS path to upload image
-	GCEImage      string `json:"gce_image"`      // pre-created GCE image to use
+	GCSPath       string `json:"gcs_path"`       // GCS path (bucket/prefix) to upload boot image
+	GCSBucket     string `json:"gcs_bucket"`     // GCS bucket for kernel disk image uploads
+	GCEImage      string `json:"gce_image"`      // pre-created GCE image to use as boot disk
+	KernelImage   string `json:"kernel_image"`   // local path to bzImage; syz-crush builds a second disk from it
 	Preemptible   bool   `json:"preemptible"`    // use preemptible VMs if available (defaults to true)
 	DisplayDevice bool   `json:"display_device"` // enable a virtual display device
 	// Username to connect to ssh-serialport.googleapis.com.
@@ -62,7 +65,18 @@ type Pool struct {
 	env            *vmimpl.Env
 	cfg            *Config
 	GCE            *gce.Context
-	consoleReadCmd string // optional: command to read non-standard kernel console
+	consoleReadCmd string   // optional: command to read non-standard kernel console
+	kernelGCEImage string   // non-empty when we own a temporary kernel GCE image
+}
+
+// Close cleans up pool-level GCE resources (e.g. temporary kernel disk images).
+// Call this when the pool is no longer needed.
+func (pool *Pool) Close() {
+	if pool.kernelGCEImage != "" {
+		if err := pool.GCE.DeleteImage(pool.kernelGCEImage); err != nil {
+			log.Logf(0, "failed to delete kernel GCE image %v: %v", pool.kernelGCEImage, err)
+		}
+	}
 }
 
 type instance struct {
@@ -116,6 +130,9 @@ func Ctor(env *vmimpl.Env, consoleReadCmd string) (*Pool, error) {
 	if cfg.GCEImage != "" && env.Image != "" {
 		return nil, fmt.Errorf("both image and gce_image are specified")
 	}
+	if cfg.KernelImage != "" && cfg.GCSBucket == "" {
+		return nil, fmt.Errorf("gcs_bucket is required when kernel_image is set")
+	}
 
 	GCE, err := initGCE(cfg.ZoneID)
 	if err != nil {
@@ -140,12 +157,22 @@ func Ctor(env *vmimpl.Env, consoleReadCmd string) (*Pool, error) {
 			return nil, fmt.Errorf("failed to create GCE image: %w", err)
 		}
 	}
+
 	pool := &Pool{
 		cfg:            cfg,
 		env:            env,
 		GCE:            GCE,
 		consoleReadCmd: consoleReadCmd,
 	}
+
+	if cfg.KernelImage != "" {
+		kernelGCEImage, err := ensureKernelGCEImage(GCE, cfg, env.Name)
+		if err != nil {
+			return nil, err
+		}
+		pool.kernelGCEImage = kernelGCEImage
+	}
+
 	return pool, nil
 }
 
@@ -195,8 +222,15 @@ func (pool *Pool) Create(workdir string, index int) (vmimpl.Instance, error) {
 		return nil, err
 	}
 	log.Logf(0, "creating instance: %v", name)
-	ip, err := pool.GCE.CreateInstance(name, pool.cfg.MachineType, pool.cfg.GCEImage,
-		string(gceKeyPub), pool.cfg.Preemptible, pool.cfg.DisplayDevice)
+	ip, err := pool.GCE.CreateInstance(gce.CreateArgs{
+		Name:          name,
+		MachineType:   pool.cfg.MachineType,
+		BootImage:     pool.cfg.GCEImage,
+		SSHKey:        string(gceKeyPub),
+		Preemptible:   pool.cfg.Preemptible,
+		DisplayDevice: pool.cfg.DisplayDevice,
+		KernelImage:   pool.kernelGCEImage,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -528,7 +562,12 @@ func uploadImageToGCS(localImage, gcsImage string) error {
 		return fmt.Errorf("failed to create GCS client: %w", err)
 	}
 	defer GCS.Close()
+	return uploadImageToGCSWithClient(GCS, localImage, gcsImage)
+}
 
+// uploadImageToGCSWithClient uploads localImage to gcsImage using an existing GCS client.
+// The file is wrapped as disk.raw inside a gzip-compressed tar archive, as required by GCE image import.
+func uploadImageToGCSWithClient(GCS *gcs.Client, localImage, gcsImage string) error {
 	localReader, err := os.Open(localImage)
 	if err != nil {
 		return fmt.Errorf("failed to open image file: %w", err)
@@ -573,6 +612,77 @@ func uploadImageToGCS(localImage, gcsImage string) error {
 		return fmt.Errorf("failed to write image file: %w", err)
 	}
 	return nil
+}
+
+// ensureKernelGCEImage creates (or reuses) a GCE image containing only bzImage,
+// suitable for attachment as a second boot disk. The image name encodes the
+// SHA256 of the bzImage so identical kernels are cached and not re-uploaded.
+func ensureKernelGCEImage(GCE *gce.Context, cfg *Config, poolName string) (string, error) {
+	hash, err := sha256FilePrefix(cfg.KernelImage, 16)
+	if err != nil {
+		return "", fmt.Errorf("failed to hash kernel image: %w", err)
+	}
+	imageName := fmt.Sprintf("%v-kernel-%v", poolName, hash)
+
+	// Cache hit: if the GCE image already exists with this name, reuse it.
+	if GCE.ImageExists(imageName) {
+		log.Logf(0, "reusing existing kernel GCE image %v", imageName)
+		return imageName, nil
+	}
+
+	log.Logf(0, "creating kernel GCE image %v from %v...", imageName, cfg.KernelImage)
+
+	// Build a 1 GiB raw ext2 image containing only bzImage.
+	tmpRaw, err := os.CreateTemp("", "kernel-disk-*.raw")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	tmpRaw.Close()
+	defer os.Remove(tmpRaw.Name())
+
+	if err := vmimpl.CreateKernelDiskImage(cfg.KernelImage, tmpRaw.Name(), true); err != nil {
+		return "", fmt.Errorf("failed to create kernel disk image: %w", err)
+	}
+
+	// Upload tar.gz to GCS, import as GCE image, then delete the GCS blob.
+	gcsKernelPath := cfg.GCSBucket + "/syzkaller-kernels/" + imageName + ".tar.gz"
+	GCS, err := gcs.NewClient()
+	if err != nil {
+		return "", fmt.Errorf("failed to create GCS client: %w", err)
+	}
+	defer GCS.Close()
+
+	log.Logf(0, "uploading kernel disk to %v...", gcsKernelPath)
+	if err := uploadImageToGCSWithClient(GCS, tmpRaw.Name(), gcsKernelPath); err != nil {
+		return "", fmt.Errorf("failed to upload kernel disk to GCS: %w", err)
+	}
+
+	log.Logf(0, "importing kernel GCE image %v...", imageName)
+	if err := GCE.CreateImage(imageName, gcsKernelPath); err != nil {
+		_ = GCS.DeleteFile(gcsKernelPath)
+		return "", fmt.Errorf("failed to create kernel GCE image: %w", err)
+	}
+
+	// The GCS tar.gz is no longer needed once the GCE image is imported.
+	if err := GCS.DeleteFile(gcsKernelPath); err != nil {
+		log.Logf(0, "warning: failed to delete kernel GCS blob %v: %v", gcsKernelPath, err)
+	}
+
+	return imageName, nil
+}
+
+// sha256FilePrefix returns the first n hex characters of the SHA256 digest of the file at path.
+func sha256FilePrefix(path string, n int) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(data)
+	hex := fmt.Sprintf("%x", sum)
+	if n > len(hex) {
+		n = len(hex)
+	}
+	return hex[:n], nil
 }
 
 func runCmd(debug bool, bin string, args ...string) error {

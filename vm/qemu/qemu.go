@@ -4,7 +4,9 @@
 package qemu
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -71,6 +73,10 @@ type Config struct {
 	Mem int `json:"mem"`
 	// For building kernels without -snapshot for pkg/build (true by default).
 	Snapshot bool `json:"snapshot"`
+	// KernelDisk is a local path to a bzImage that will be attached as a second
+	// IDE disk (index=1). GRUB on the primary disk is expected to load the kernel
+	// from (hd1)/bzImage. Cannot be used together with Kernel (-kernel injected boot).
+	KernelDisk string `json:"kernel_disk"`
 	// Magic key used to dongle macOS to the device.
 	AppleSmcOsk string `json:"apple_smc_osk"`
 }
@@ -305,8 +311,12 @@ func ctor(env *vmimpl.Env) (vmimpl.Pool, error) {
 	if cfg.Mem < 128 || cfg.Mem > 1048576 {
 		return nil, fmt.Errorf("bad qemu mem: %v, want [128-1048576]", cfg.Mem)
 	}
+	if cfg.KernelDisk != "" && cfg.Kernel != "" {
+		return nil, fmt.Errorf("kernel_disk and kernel are mutually exclusive")
+	}
 	cfg.Kernel = osutil.Abs(cfg.Kernel)
 	cfg.Initrd = osutil.Abs(cfg.Initrd)
+	cfg.KernelDisk = osutil.Abs(cfg.KernelDisk)
 
 	output, err := osutil.RunCmd(time.Minute, "", cfg.Qemu, "--version")
 	if err != nil {
@@ -381,6 +391,15 @@ func (pool *Pool) ctor(workdir, sshkey, sshuser string, index int) (vmimpl.Insta
 		// want to pass us a fake empty image because the rest of syzkaller
 		// assumes that an image is mandatory. So if the image is empty, we ignore it.
 		inst.image = ""
+	}
+	// If the image is a tar.gz archive (e.g. image.tar.gz from kGymSuite), extract
+	// the disk.raw member into the workdir for use as the primary QEMU disk.
+	if strings.HasSuffix(inst.image, ".tar.gz") {
+		diskPath := filepath.Join(workdir, "disk.raw")
+		if err := extractDiskRaw(inst.image, diskPath); err != nil {
+			return nil, fmt.Errorf("failed to extract disk image from %v: %w", inst.image, err)
+		}
+		inst.image = diskPath
 	}
 	closeInst := inst
 	defer func() {
@@ -474,6 +493,17 @@ func (inst *instance) boot() error {
 		}
 		if inst.cfg.Snapshot {
 			args = append(args, "-snapshot")
+		}
+		// Attach a second IDE disk containing only bzImage so GRUB can load it
+		// from (hd1)/bzImage. This avoids modifying the base userspace image per job.
+		if inst.cfg.KernelDisk != "" {
+			kernelImg := filepath.Join(inst.workdir, "kernel.img")
+			if err := vmimpl.CreateKernelDiskImage(inst.cfg.KernelDisk, kernelImg, false); err != nil {
+				return nil, fmt.Errorf("failed to create kernel disk image: %w", err)
+			}
+			args = append(args,
+				"-drive", fmt.Sprintf("if=ide,index=1,format=raw,file=%v", kernelImg),
+			)
 		}
 	}
 	if inst.cfg.Initrd != "" {
@@ -777,6 +807,46 @@ func (inst *instance) ssh(args ...string) ([]byte, error) {
 func (inst *instance) sshArgs(args ...string) []string {
 	sshArgs := append(vmimpl.SSHArgs(inst.debug, inst.sshkey, inst.port, false), inst.sshuser+"@localhost")
 	return append(sshArgs, args...)
+}
+
+// extractDiskRaw extracts the disk.raw member from a gzip-compressed tar archive
+// (as produced by the kGymSuite image pipeline) and writes it to destPath.
+func extractDiskRaw(archivePath, destPath string) error {
+	f, err := os.Open(archivePath)
+	if err != nil {
+		return fmt.Errorf("failed to open archive: %w", err)
+	}
+	defer f.Close()
+
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		return fmt.Errorf("failed to create gzip reader: %w", err)
+	}
+	defer gz.Close()
+
+	tr := tar.NewReader(gz)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("failed to read tar: %w", err)
+		}
+		if filepath.Base(hdr.Name) != "disk.raw" {
+			continue
+		}
+		out, err := os.Create(destPath)
+		if err != nil {
+			return fmt.Errorf("failed to create disk.raw: %w", err)
+		}
+		defer out.Close()
+		if _, err := io.Copy(out, tr); err != nil {
+			return fmt.Errorf("failed to write disk.raw: %w", err)
+		}
+		return nil
+	}
+	return fmt.Errorf("disk.raw not found in archive %v", archivePath)
 }
 
 // nolint: lll

@@ -47,8 +47,16 @@ type Context struct {
 }
 
 type CreateArgs struct {
+	Name          string
+	MachineType   string
+	BootImage     string
+	SSHKey        string
 	Preemptible   bool
 	DisplayDevice bool
+	// KernelImage, if non-empty, is the name of a GCE image that will be attached
+	// as a second non-boot persistent disk. GRUB on the boot disk is expected to
+	// load the kernel from this disk (hd1)/bzImage.
+	KernelImage string
 }
 
 func NewContext(customZoneID string) (*Context, error) {
@@ -117,27 +125,40 @@ func NewContext(customZoneID string) (*Context, error) {
 	return ctx, nil
 }
 
-func (ctx *Context) CreateInstance(name, machineType, image, sshkey string,
-	preemptible, displayDevice bool) (string, error) {
+func (ctx *Context) CreateInstance(args CreateArgs) (string, error) {
 	prefix := "https://www.googleapis.com/compute/v1/projects/" + ctx.ProjectID
-	sshkeyAttr := "syzkaller:" + sshkey
+	sshkeyAttr := "syzkaller:" + args.SSHKey
 	oneAttr := "1"
 	falseAttr := false
-	instance := &compute.Instance{
-		Name:        name,
-		Description: "syzkaller worker",
-		MachineType: prefix + "/zones/" + ctx.ZoneID + "/machineTypes/" + machineType,
-		Disks: []*compute.AttachedDisk{
-			{
-				AutoDelete: true,
-				Boot:       true,
-				Type:       "PERSISTENT",
-				InitializeParams: &compute.AttachedDiskInitializeParams{
-					DiskName:    name,
-					SourceImage: prefix + "/global/images/" + image,
-				},
+
+	disks := []*compute.AttachedDisk{
+		{
+			AutoDelete: true,
+			Boot:       true,
+			Type:       "PERSISTENT",
+			InitializeParams: &compute.AttachedDiskInitializeParams{
+				DiskName:    args.Name,
+				SourceImage: prefix + "/global/images/" + args.BootImage,
 			},
 		},
+	}
+	if args.KernelImage != "" {
+		disks = append(disks, &compute.AttachedDisk{
+			AutoDelete: true,
+			Boot:       false,
+			Type:       "PERSISTENT",
+			InitializeParams: &compute.AttachedDiskInitializeParams{
+				DiskName:    args.Name + "-kernel",
+				SourceImage: prefix + "/global/images/" + args.KernelImage,
+			},
+		})
+	}
+
+	instance := &compute.Instance{
+		Name:        args.Name,
+		Description: "syzkaller worker",
+		MachineType: prefix + "/zones/" + ctx.ZoneID + "/machineTypes/" + args.MachineType,
+		Disks:       disks,
 		Metadata: &compute.Metadata{
 			Items: []*compute.MetadataItems{
 				{
@@ -158,15 +179,15 @@ func (ctx *Context) CreateInstance(name, machineType, image, sshkey string,
 		},
 		Scheduling: &compute.Scheduling{
 			AutomaticRestart:  &falseAttr,
-			Preemptible:       preemptible,
+			Preemptible:       args.Preemptible,
 			OnHostMaintenance: "TERMINATE",
 		},
 		DisplayDevice: &compute.DisplayDevice{
-			EnableDisplay: displayDevice,
+			EnableDisplay: args.DisplayDevice,
 		},
 	}
 retry:
-	if !instance.Scheduling.Preemptible && strings.HasPrefix(machineType, "e2-") {
+	if !instance.Scheduling.Preemptible && strings.HasPrefix(args.MachineType, "e2-") {
 		// Otherwise we get "Error 400: Efficient instances do not support
 		// onHostMaintenance=TERMINATE unless they are preemptible".
 		instance.Scheduling.OnHostMaintenance = "MIGRATE"
@@ -190,11 +211,11 @@ retry:
 
 	var inst *compute.Instance
 	err = ctx.apiCall(func() (err error) {
-		inst, err = ctx.computeService.Instances.Get(ctx.ProjectID, ctx.ZoneID, name).Do()
+		inst, err = ctx.computeService.Instances.Get(ctx.ProjectID, ctx.ZoneID, args.Name).Do()
 		return
 	})
 	if err != nil {
-		return "", fmt.Errorf("error getting instance %s details after creation: %w", name, err)
+		return "", fmt.Errorf("error getting instance %s details after creation: %w", args.Name, err)
 	}
 
 	// Finds its internal IP.
@@ -293,6 +314,19 @@ func (ctx *Context) DeleteImage(imageName string) error {
 		return err
 	}
 	return nil
+}
+
+// ImageExists returns true if a GCE image with the given name exists in the project.
+func (ctx *Context) ImageExists(imageName string) bool {
+	var apiErr *googleapi.Error
+	err := ctx.apiCall(func() error {
+		_, err := ctx.computeService.Images.Get(ctx.ProjectID, imageName).Do()
+		return err
+	})
+	if errors.As(err, &apiErr) && apiErr.Code == 404 {
+		return false
+	}
+	return err == nil
 }
 
 type resourcePoolExhaustedError string
