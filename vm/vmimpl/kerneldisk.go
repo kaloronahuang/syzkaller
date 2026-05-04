@@ -12,8 +12,9 @@ import (
 
 // CreateKernelDiskImage builds a raw ext2 filesystem image containing only bzImage at its root.
 // The image is created using genext2fs, which requires no kernel interfaces or elevated privileges.
-// If pad is true, the image is truncated to exactly 1 GiB (required for GCE image import).
-func CreateKernelDiskImage(bzImagePath, outputPath string, pad bool) error {
+// The image is exactly 2 GiB (GiB-aligned, satisfying the GCE disk import requirement) and large
+// enough to hold any bzImage.
+func CreateKernelDiskImage(bzImagePath, outputPath string) error {
 	// Create a temporary staging directory with just the bzImage inside.
 	stagingDir, err := os.MkdirTemp("", "kerneldisk-*")
 	if err != nil {
@@ -30,24 +31,17 @@ func CreateKernelDiskImage(bzImagePath, outputPath string, pad bool) error {
 		return fmt.Errorf("failed to write bzImage to staging dir: %w", err)
 	}
 
-	// Build a 64 MiB ext2 image from the staging directory.
+	// Build a 2 GiB ext2 image from the staging directory.
 	// genext2fs is fully unprivileged — no loop devices, no mount calls.
-	const sizekb = 65536 // 64 MiB
+	// 2 GiB = 2<<20 1-KiB blocks; GiB-aligned so no separate truncate is needed for GCE.
+	const sizeBlocks = 2 << 20
 	cmd := exec.Command("genext2fs",
-		"-b", fmt.Sprintf("%d", sizekb),
+		"-b", fmt.Sprintf("%d", sizeBlocks),
 		"-d", stagingDir,
 		outputPath,
 	)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("genext2fs failed: %w\n%s", err, out)
-	}
-
-	// GCE requires disk images to be aligned to a 1 GiB boundary.
-	if pad {
-		const oneGiB = int64(1 << 30)
-		if err := os.Truncate(outputPath, oneGiB); err != nil {
-			return fmt.Errorf("failed to pad kernel disk image to 1 GiB: %w", err)
-		}
 	}
 
 	return nil

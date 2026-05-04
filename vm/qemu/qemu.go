@@ -498,8 +498,8 @@ func (inst *instance) boot() error {
 		// from (hd1)/bzImage. This avoids modifying the base userspace image per job.
 		if inst.cfg.KernelDisk != "" {
 			kernelImg := filepath.Join(inst.workdir, "kernel.img")
-			if err := vmimpl.CreateKernelDiskImage(inst.cfg.KernelDisk, kernelImg, false); err != nil {
-				return nil, fmt.Errorf("failed to create kernel disk image: %w", err)
+			if err := vmimpl.CreateKernelDiskImage(inst.cfg.KernelDisk, kernelImg); err != nil {
+				return fmt.Errorf("failed to create kernel disk image: %w", err)
 			}
 			args = append(args,
 				"-drive", fmt.Sprintf("if=ide,index=1,format=raw,file=%v", kernelImg),

@@ -640,7 +640,7 @@ func ensureKernelGCEImage(GCE *gce.Context, cfg *Config, poolName string) (strin
 	tmpRaw.Close()
 	defer os.Remove(tmpRaw.Name())
 
-	if err := vmimpl.CreateKernelDiskImage(cfg.KernelImage, tmpRaw.Name(), true); err != nil {
+	if err := vmimpl.CreateKernelDiskImage(cfg.KernelImage, tmpRaw.Name()); err != nil {
 		return "", fmt.Errorf("failed to create kernel disk image: %w", err)
 	}
 

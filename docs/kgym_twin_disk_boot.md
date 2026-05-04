@@ -108,9 +108,9 @@ section of the syz-crush config:
 2. If a GCE image with that name already exists, it is **reused** (cache hit —
    the same kernel binary was used in a previous run).
 3. Otherwise:
-   - A 64 MiB ext2 filesystem image is created with `genext2fs`, containing
-     only `bzImage` at the root.
-   - The image is padded to 1 GiB (GCE import requirement) with `truncate`.
+   - A 2 GiB ext2 filesystem image is created with `genext2fs`, containing
+     only `bzImage` at the root. 2 GiB is GiB-aligned (satisfying the GCE
+     disk import requirement) and large enough for any bzImage.
    - It is wrapped as `disk.raw` inside a gzip-compressed tar archive and
      uploaded to `gs://<gcs_bucket>/syzkaller-kernels/<name>.tar.gz`.
    - GCE imports it as a new image.
@@ -165,8 +165,8 @@ extracted):
 
 1. If `image` ends with `.tar.gz`, `disk.raw` is extracted from the archive
    into the instance workdir and used as the primary QEMU disk.
-2. A 64 MiB ext2 image containing only `bzImage` is created with `genext2fs`
-   in the instance workdir (no padding needed for QEMU).
+2. A 2 GiB ext2 image containing only `bzImage` is created with `genext2fs`
+   in the instance workdir.
 3. QEMU is started with two disks:
    - Primary (IDE index 0): the userspace disk image (`-hda` / `image_device`).
    - Kernel (IDE index 1): the tiny ext2 image
@@ -193,9 +193,8 @@ extracted):
 │                                               │
 │  ┌─────────────┐     ┌──────────────────────┐ │
 │  │  bzImage    │────▶│  genext2fs           │ │
-│  │  (per-job)  │     │  → 64 MiB ext2       │ │
-│  └─────────────┘     │  → pad to 1 GiB(GCE) │ │
-│                      └──────────┬───────────┘ │
+│  │  (per-job)  │     │  → 2 GiB ext2        │ │
+│  └─────────────┘     └──────────┬───────────┘ │
 │                                 │             │
 │             GCE: upload + import as GCE image │
 │             QEMU: use local file directly     │
