@@ -40,6 +40,10 @@ var (
 	flagKdump            = flag.Bool("kdump", false, "capture kdump when crashing")
 	flagKdumpArgs        = flag.String("kdump_args", "-c -d 17", "makedumpfile arguments")
 	flagThreaded         = flag.Bool("threaded", true, "threaded or not for syz reproducer")
+	flagCLoop            = flag.Bool("c_loop", true, "C reproducer: restart the program whenever it exits, "+
+		"until restart_time (the run can then only end by timeout, so an ssh drop is a lost connection)")
+	flagCHeartbeat = flag.Duration("c_heartbeat", 30*time.Second, "C reproducer: print a progress line "+
+		"from inside the VM at this interval, so quiet runs do not end as 'no output' (0 disables)")
 )
 
 type FileType int
@@ -224,7 +228,10 @@ func runInstance(cfg *mgrconfig.Config, reporter *report.Reporter,
 		if err != nil {
 			log.Fatalf("error reading source file from '%s'", file)
 		}
-		res, err = inst.RunCProgRaw(src, cfg.Target, timeout)
+		res, err = inst.RunCProgRawOpts(src, cfg.Target, timeout, instance.CRunOptions{
+			Loop:      *flagCLoop,
+			Heartbeat: *flagCHeartbeat,
+		})
 	}
 	if err != nil {
 		log.Printf("failed to execute program: %v", err)

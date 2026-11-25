@@ -182,6 +182,62 @@ func (inst *ExecProgInstance) RunCProgRaw(src []byte, target *prog.Target,
 	return inst.runBinary(bin, duration)
 }
 
+// CRunOptions controls how a compiled C reproducer is run in the VM.
+type CRunOptions struct {
+	// Loop restarts the program whenever it exits, until the run times out. A one-shot
+	// reproducer then keeps trying, and the program exiting can no longer end the run
+	// early as a silent "no crash": the run may only end by timeout, so a dropped ssh
+	// session is reported as a lost connection.
+	Loop bool
+	// Heartbeat, if non-zero, prints a progress line from inside the VM at this interval.
+	// C programs print nothing the monitor counts as progress, so without it every run
+	// that does not crash ends as "no output from test machine". It comes from inside the
+	// VM, so a wedged VM still stops it and real hangs are still reported.
+	Heartbeat time.Duration
+}
+
+// cReproHeartbeat is the heartbeat line: the monitor counts "executed programs:" as progress.
+const cReproHeartbeat = "executed programs: 0 [C reproducer heartbeat]"
+
+// CReproCommand returns the command that runs the C reproducer binary bin in the VM with
+// opts, and the exit conditions the run may end with.
+func CReproCommand(bin string, opts CRunOptions) (string, vm.ExitCondition) {
+	if !opts.Loop && opts.Heartbeat <= 0 {
+		return bin, binExitConditions
+	}
+	script := ""
+	if opts.Heartbeat > 0 {
+		seconds := int(opts.Heartbeat.Seconds())
+		if seconds < 1 {
+			seconds = 1
+		}
+		script += fmt.Sprintf(`(while :; do echo "%v"; sleep %v; done) & HEARTBEAT=$!; `,
+			cReproHeartbeat, seconds)
+	}
+	if opts.Loop {
+		script += fmt.Sprintf(`while :; do %v; echo "C reproducer exited with status $?, restarting"; sleep 1; done`, bin)
+		return fmt.Sprintf("sh -c '%v'", script), vm.ExitTimeout
+	}
+	script += fmt.Sprintf(`%v; STATUS=$?; kill $HEARTBEAT; exit $STATUS`, bin)
+	return fmt.Sprintf("sh -c '%v'", script), binExitConditions
+}
+
+// RunCProgRawOpts is RunCProgRaw with control over how the program is run (see CRunOptions).
+func (inst *ExecProgInstance) RunCProgRawOpts(src []byte, target *prog.Target,
+	duration time.Duration, opts CRunOptions) (*RunResult, error) {
+	bin, err := csource.BuildNoWarn(target, src)
+	if err != nil {
+		return nil, err
+	}
+	defer os.Remove(bin)
+	vmBin, err := inst.VMInstance.Copy(bin)
+	if err != nil {
+		return nil, &TestError{Title: fmt.Sprintf("failed to copy binary to VM: %v", err)}
+	}
+	command, exitCondition := CReproCommand(vmBin, opts)
+	return inst.runCommand(command, duration, exitCondition)
+}
+
 func (inst *ExecProgInstance) RunSyzProgFile(progFile string, duration time.Duration,
 	opts csource.Options, exitCondition vm.ExitCondition) (*RunResult, error) {
 	vmProgFile, err := inst.VMInstance.Copy(progFile)

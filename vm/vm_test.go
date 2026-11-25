@@ -258,6 +258,49 @@ var tests = []*Test{
 		},
 	},
 	{
+		// A looping C reproducer with a heartbeat (instance.CReproCommand): quiet for longer
+		// than NoOutput, but the heartbeat keeps the run alive until it times out cleanly.
+		Name: "c-repro-heartbeat-keeps-run-alive",
+		Exit: ExitTimeout,
+		Body: func(outc chan []byte, errc chan error) {
+			for i := 0; i < 8; i++ {
+				outc <- []byte("executed programs: 0 [C reproducer heartbeat]\n")
+				time.Sleep(time.Second)
+			}
+			errc <- vmimpl.ErrTimeout
+		},
+	},
+	{
+		// The same quiet C reproducer without a heartbeat ends as "no output".
+		Name: "c-repro-without-heartbeat-is-no-output",
+		Exit: ExitTimeout | ExitNormal | ExitError,
+		Body: func(outc chan []byte, errc chan error) {
+			for i := 0; i < 8; i++ {
+				outc <- []byte("C reproducer exited with status 0, restarting\n")
+				time.Sleep(time.Second)
+			}
+			errc <- vmimpl.ErrTimeout
+		},
+		Report: &report.Report{
+			Title: noOutputCrash,
+		},
+	},
+	{
+		// A looping C reproducer only ends by timeout, so a dropped ssh session is
+		// reported instead of passing as a silent "no crash".
+		Name: "c-repro-loop-ssh-drop-is-lost-connection",
+		Exit: ExitTimeout,
+		Body: func(outc chan []byte, errc chan error) {
+			outc <- []byte("executed programs: 0 [C reproducer heartbeat]\n")
+			time.Sleep(time.Second)
+			errc <- fmt.Errorf("ssh exited")
+		},
+		Report: &report.Report{
+			Title: lostConnectionCrash,
+			Type:  crash.LostConnection,
+		},
+	},
+	{
 		Name: "no-output-1",
 		Body: func(outc chan []byte, errc chan error) {
 		},
